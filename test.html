@@ -87,12 +87,12 @@
 	<p class="muted">Set base URL, connect WebSocket, try chat, TTS/ASR, and Pomodoro. Works with the FastAPI server
 		you started.</p>
 
-	<fieldset>
-		<legend>Config</legend>
-		<div class="row">
-			<div>
-				<label>API base URL</label>
-				<input id="baseUrl" type="text" value="http://localhost:8000" />
+        <fieldset>
+                <legend>Config</legend>
+                <div class="row">
+                        <div>
+                                <label>API base URL</label>
+                                <input id="baseUrl" type="text" value="http://localhost:8000" />
 			</div>
 			<div>
 				<label>User ID</label>
@@ -102,13 +102,30 @@
 		<div>
 			<button id="btnHealth">Health</button>
 			<span id="healthOut" class="muted"></span>
-		</div>
-	</fieldset>
+                </div>
+        </fieldset>
 
-	<fieldset>
-		<legend>WebSocket events</legend>
-		<div>
-			<button id="btnWsConnect">Connect</button>
+        <fieldset>
+                <legend>Personality</legend>
+                <div class="row">
+                        <div>
+                                <label>Available personalities</label>
+                                <button id="btnListPersonalities">/personalities</button>
+                                <div class="muted" id="personalitiesOut"></div>
+                        </div>
+                        <div>
+                                <label>Set personality ID</label>
+                                <input id="personalityId" type="text" placeholder="focus_friend" />
+                                <button id="btnSetPersonality">/prefs/{user}/personality</button>
+                                <div class="muted" id="personalitySetOut"></div>
+                        </div>
+                </div>
+        </fieldset>
+
+        <fieldset>
+                <legend>WebSocket events</legend>
+                <div>
+                        <button id="btnWsConnect">Connect</button>
 			<button id="btnWsDisconnect">Disconnect</button>
 			<span id="wsState" class="muted">disconnected</span>
 		</div>
@@ -201,17 +218,62 @@
 		};
 		$("btnWsDisconnect").onclick = () => {if (ws) ws.close();};
 
-		$("btnHealth").onclick = async () => {
-			try {
-				const r = await fetch(`${$("baseUrl").value}/healthz`);
-				const j = await r.json();
-				$("healthOut").textContent = `ok=${j.ok} voice_backend=${j.voice_backend}`;
-			} catch (e) {$("healthOut").textContent = 'error';}
-		};
+                $("btnHealth").onclick = async () => {
+                        try {
+                                const r = await fetch(`${$("baseUrl").value}/healthz`);
+                                const j = await r.json();
+                                $("healthOut").textContent = `ok=${j.ok} voice_backend=${j.voice_backend}`;
+                        } catch (e) {$("healthOut").textContent = 'error';}
+                };
 
-		$("btnChatSend").onclick = async () => {
-			const payload = {user_id: $("userId").value, text: $("chatText").value};
-			const r = await fetch(`${$("baseUrl").value}/chat/send`, {method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify(payload)});
+                $("btnListPersonalities").onclick = async () => {
+                        const container = $("personalitiesOut");
+                        container.textContent = 'Loading...';
+                        try {
+                                const r = await fetch(`${$("baseUrl").value}/personalities`);
+                                const j = await r.json();
+                                while (container.firstChild) container.removeChild(container.firstChild);
+                                if (!j.items || !j.items.length) {
+                                        container.textContent = 'None';
+                                        return;
+                                }
+                                j.items.forEach((p) => {
+                                        const line = document.createElement('div');
+                                        line.textContent = `${p.id} — ${p.title}`;
+                                        container.appendChild(line);
+                                });
+                        } catch (e) {
+                                container.textContent = 'error';
+                        }
+                };
+
+                $("btnSetPersonality").onclick = async () => {
+                        const personalityId = $("personalityId").value.trim();
+                        if (!personalityId) {
+                                $("personalitySetOut").textContent = 'enter an id';
+                                return;
+                        }
+                        $("personalitySetOut").textContent = 'Saving...';
+                        try {
+                                const r = await fetch(`${$("baseUrl").value}/prefs/${encodeURIComponent($("userId").value)}/personality`, {
+                                        method: 'POST',
+                                        headers: {'content-type': 'application/json'},
+                                        body: JSON.stringify({personality_id: personalityId}),
+                                });
+                                const j = await r.json();
+                                if (!r.ok) {
+                                        $("personalitySetOut").textContent = `error: ${j.error || 'unknown'}`;
+                                        return;
+                                }
+                                $("personalitySetOut").textContent = `set to ${j.personality.id}`;
+                        } catch (e) {
+                                $("personalitySetOut").textContent = 'error';
+                        }
+                };
+
+                $("btnChatSend").onclick = async () => {
+                        const payload = {user_id: $("userId").value, text: $("chatText").value};
+                        const r = await fetch(`${$("baseUrl").value}/chat/send`, {method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify(payload)});
 			const j = await r.json();
 			$("chatResp").textContent = `reply: ${j.text} voice_suggested=${j.voice_suggested}`;
 			if (j.voice_suggested && j.text) say(j.text, 'mp3');

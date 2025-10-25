@@ -3,6 +3,7 @@ import asyncio
 from datetime import datetime, timedelta, timezone
 from enum import Enum
 from typing import Dict, Optional, Set
+from dataclasses import dataclass
 
 from fastapi import FastAPI, UploadFile, File, WebSocket, WebSocketDisconnect, Body
 from fastapi.responses import StreamingResponse, JSONResponse
@@ -44,6 +45,78 @@ class Settings(BaseSettings):
         env_file = ".env"
 
 settings = Settings()
+
+# ===================== Personalities =====================
+@dataclass(frozen=True)
+class Personality:
+    id: str
+    title: str
+    description: str
+    style_prompt: str
+    voice_reference_id: Optional[str] = None
+    fallback_prefix: str = ""
+    fallback_suffix: str = ""
+
+
+DEFAULT_PERSONALITY_ID = "focus_friend"
+
+PERSONALITIES: Dict[str, Personality] = {
+    "focus_friend": Personality(
+        id="focus_friend",
+        title="Steady Focus Friend",
+        description=(
+            "A balanced accountability buddy who mixes cheer with calm, "
+            "keeps momentum going, and offers tiny nudges."
+        ),
+        style_prompt=(
+            "You are the Steady Focus Friend: a warm, supportive companion who blends gentle coaching "
+            "with practical next steps. Keep replies short (~20 words), encouraging, and grounded."
+        ),
+        fallback_prefix="Alright, teammate!",
+    ),
+    "hype_buddy": Personality(
+        id="hype_buddy",
+        title="High-Energy Hype Buddy",
+        description=(
+            "A big-energy cheerleader who celebrates every win and keeps things upbeat and motivating."
+        ),
+        style_prompt=(
+            "You are the High-Energy Hype Buddy: respond with enthusiastic, upbeat energy, lots of positive "
+            "reinforcement, and motivational sparks. Stay concise (~20 words)."
+        ),
+        fallback_prefix="Let's go!",
+        fallback_suffix="You've absolutely got this!",
+    ),
+    "zen_guide": Personality(
+        id="zen_guide",
+        title="Zen Focus Guide",
+        description=(
+            "A calm, mindful guide who keeps the user grounded with relaxed, reassuring language."
+        ),
+        style_prompt=(
+            "You are the Zen Focus Guide: speak in a calm, centered tone with mindful encouragement. "
+            "Keep messages brief (~20 words) and soothing."
+        ),
+        fallback_prefix="Deep breath—",
+    ),
+}
+
+
+def get_personality(personality_id: Optional[str]) -> Personality:
+    return PERSONALITIES.get(personality_id or "", PERSONALITIES[DEFAULT_PERSONALITY_ID])
+
+
+def personality_style_prompt(personality: Personality, base_instruction: str) -> str:
+    if not personality.style_prompt:
+        return base_instruction
+    return f"{personality.style_prompt.strip()} {base_instruction}".strip()
+
+
+def apply_personality_text(personality: Personality, text: str) -> str:
+    prefix = personality.fallback_prefix.strip()
+    suffix = personality.fallback_suffix.strip()
+    parts = [part for part in [prefix, text.strip(), suffix] if part]
+    return " ".join(parts)
 
 # ===================== FastAPI & CORS =====================
 app = FastAPI(title="BodyDouble — Letta + Fish Audio")
@@ -141,15 +214,24 @@ if settings.LETTA_BASE_URL:
 else:
     letta = Letta(token=settings.LETTA_API_KEY)
 
-def letta_generate_single(content: str) -> str:
+def letta_generate_single(content: str, personality: Optional[Personality] = None) -> str:
     """
     Send a single user message to Letta, return the assistant's text (STATEFUL pattern).
     """
     if not settings.LETTA_AGENT_ID:
         return ""  # allow fallback upstream
+    prompt = content
+    if personality:
+        instruction = personality_style_prompt(
+            personality,
+            "Respond in that persona. Keep it warm, actionable, and under ~20 words.",
+        )
+        prompt = (
+            f"{instruction}\n\nUser message: {content}\nAssistant:"
+        )
     resp = letta.agents.messages.create(
         agent_id=settings.LETTA_AGENT_ID,
-        messages=[{"role": "user", "content": content}],
+        messages=[{"role": "user", "content": prompt}],
     )
     for msg in getattr(resp, "messages", []):
         if getattr(msg, "message_type", "") == "assistant_message":
@@ -166,13 +248,19 @@ class SayIn(BaseModel):
     temperature: Optional[float] = 0.7
     top_p: Optional[float] = 0.7
     format: Optional[str] = "mp3"
+    user_id: Optional[str] = None
 
 @app.post("/voice/say", summary="Text-to-speech (streams mp3/wav)")
 def voice_say(payload: SayIn):
+    reference_id = payload.reference_id
+    if not reference_id and payload.user_id:
+        prefs = user_prefs.get(payload.user_id, UserPrefs())
+        personality = get_personality(prefs.personality_id)
+        reference_id = personality.voice_reference_id
     gen = fish_tts_stream(
         text=payload.text,
         fmt=payload.format or "mp3",
-        reference_id=payload.reference_id,
+        reference_id=reference_id,
         speed=payload.speed or 1.0,
         volume=payload.volume or 0,
         latency=payload.latency or "balanced",
@@ -254,13 +342,23 @@ async def ws_events(ws: WebSocket, user_id: str):
 # ===================== User preferences (Voice toggle) =====================
 class UserPrefs(BaseModel):
     voice_enabled: bool = True
+    personality_id: str = DEFAULT_PERSONALITY_ID
 
 user_prefs: Dict[str, UserPrefs] = {}
 
 @app.get("/prefs/{user_id}")
 def get_prefs(user_id: str):
     prefs = user_prefs.get(user_id, UserPrefs())
-    return {"user_id": user_id, "voice_enabled": prefs.voice_enabled}
+    personality = get_personality(prefs.personality_id)
+    return {
+        "user_id": user_id,
+        "voice_enabled": prefs.voice_enabled,
+        "personality": {
+            "id": personality.id,
+            "title": personality.title,
+            "description": personality.description,
+        },
+    }
 
 class VoiceToggleIn(BaseModel):
     enabled: bool
@@ -271,6 +369,46 @@ def set_voice_pref(user_id: str, payload: VoiceToggleIn):
     prefs.voice_enabled = payload.enabled
     user_prefs[user_id] = prefs
     return {"ok": True, "user_id": user_id, "voice_enabled": prefs.voice_enabled}
+
+
+class PersonalitySetIn(BaseModel):
+    personality_id: str
+
+
+@app.post("/prefs/{user_id}/personality")
+def set_personality_pref(user_id: str, payload: PersonalitySetIn):
+    if payload.personality_id not in PERSONALITIES:
+        return JSONResponse(
+            {"error": "unknown_personality", "available": list(PERSONALITIES.keys())},
+            status_code=400,
+        )
+    prefs = user_prefs.get(user_id, UserPrefs())
+    prefs.personality_id = payload.personality_id
+    user_prefs[user_id] = prefs
+    personality = get_personality(prefs.personality_id)
+    return {
+        "ok": True,
+        "user_id": user_id,
+        "personality": {
+            "id": personality.id,
+            "title": personality.title,
+            "description": personality.description,
+        },
+    }
+
+
+@app.get("/personalities")
+def list_personalities():
+    return {
+        "items": [
+            {
+                "id": p.id,
+                "title": p.title,
+                "description": p.description,
+            }
+            for p in PERSONALITIES.values()
+        ]
+    }
 
 # ===================== Pomodoro =====================
 class PomodoroRequest(BaseModel):
@@ -351,49 +489,66 @@ def chat_send(payload: ChatIn):
     """
     cancel_followup(payload.user_id)
 
+    prefs = user_prefs.get(payload.user_id, UserPrefs())
+    personality = get_personality(prefs.personality_id)
+
     # Ask Letta for a short English reply (fallback if Letta unavailable).
     prompt = payload.text.strip()
     reply = ""
     if prompt:
-        reply = letta_generate_single(prompt) or ""
+        reply = letta_generate_single(prompt, personality=personality) or ""
 
     if not reply:
-        reply = "Got it—I’m here. Want me to break that into three small steps?"
+        reply = apply_personality_text(
+            personality,
+            "Got it—I’m here. Want me to break that into three small steps?",
+        )
 
     # One-shot follow-up timer
     schedule_followup(payload.user_id, settings.FOLLOWUP_DELAY_SEC)
 
     # Suggest voice playback to the client only if the user prefers voice
-    prefs = user_prefs.get(payload.user_id, UserPrefs())
-    return {"text": reply, "voice_suggested": bool(prefs.voice_enabled)}
+    return {
+        "text": reply,
+        "voice_suggested": bool(prefs.voice_enabled),
+        "personality": personality.id,
+    }
 
 # ===================== Copy generation & Orchestrator =====================
-def fallback_text_for(event: Event) -> str:
+def fallback_text_for(event: Event, personality: Personality) -> str:
     if event.type == EventType.REMINDER_DUE:
         phase = event.data.get("phase")
         minutes = event.data.get("minutes")
         if phase == PomodoroPhase.FOCUS_START:
-            return f"Starting a {minutes}-minute focus block—let’s do this!"
+            base = f"Starting a {minutes}-minute focus block—let’s do this!"
         elif phase == PomodoroPhase.BREAK_START:
-            return f"Break time for {minutes} minutes—water and a quick stretch!"
+            base = f"Break time for {minutes} minutes—water and a quick stretch!"
         elif phase == PomodoroPhase.CYCLE_END:
-            return "That round’s done. Start another?"
+            base = "That round’s done. Start another?"
         else:
-            return "All pomodoros done for today. Great job!"
+            base = "All pomodoros done for today. Great job!"
     elif event.type == EventType.MSG_FOLLOWUP:
-        return "Hey, still here—how’s it going? Want a tiny 5‑minute next step?"
-    return "You’ve got this!"
+        base = "Hey, still here—how’s it going? Want a tiny 5‑minute next step?"
+    else:
+        base = "You’ve got this!"
+    return apply_personality_text(personality, base)
 
 async def generate_text_for_event(event: Event) -> str:
+    prefs = user_prefs.get(event.user_id, UserPrefs())
+    personality = get_personality(prefs.personality_id)
+
     if not settings.LETTA_AGENT_ID:
-        return fallback_text_for(event)
+        return fallback_text_for(event, personality)
 
     if event.type == EventType.REMINDER_DUE:
         phase = event.data.get("phase", "")
         minutes = event.data.get("minutes")
-        base = (
-            "You are a supportive, ADHD‑friendly companion coach. "
-            "Respond in ONE short, conversational English sentence (max ~20 words), friendly and positive."
+        base = personality_style_prompt(
+            personality,
+            (
+                "You are a supportive, ADHD‑friendly companion coach. "
+                "Respond in ONE short, conversational English sentence (max ~20 words), friendly and positive."
+            ),
         )
         if phase == PomodoroPhase.FOCUS_START:
             prompt = (
@@ -411,16 +566,19 @@ async def generate_text_for_event(event: Event) -> str:
         else:
             prompt = f"{base} All pomodoros are done today; celebrate and offer a short wrap‑up tip."
     elif event.type == EventType.MSG_FOLLOWUP:
-        base = (
-            "You are a caring friend. In ONE brief English sentence (~20 words), "
-            "lightly check on progress and suggest a tiny next step. Be empathetic and non‑pressuring."
+        base = personality_style_prompt(
+            personality,
+            (
+                "You are a caring friend. In ONE brief English sentence (~20 words), "
+                "lightly check on progress and suggest a tiny next step. Be empathetic and non‑pressuring."
+            ),
         )
         prompt = f"{base} The user has not replied for a while."
     else:
-        return fallback_text_for(event)
+        return fallback_text_for(event, personality)
 
-    text = letta_generate_single(prompt).strip()
-    return text or fallback_text_for(event)
+    text = letta_generate_single(prompt, personality=personality).strip()
+    return text or fallback_text_for(event, personality)
 
 async def voice_orchestrator():
     """
@@ -431,16 +589,28 @@ async def voice_orchestrator():
     while True:
         event: Event = await event_queue.get()
         try:
-            text = await generate_text_for_event(event)
             prefs = user_prefs.get(event.user_id, UserPrefs())
+            personality = get_personality(prefs.personality_id)
+            text = await generate_text_for_event(event)
             msg_type = "speak" if prefs.voice_enabled else "chat"
             await ws_manager.send_json(event.user_id, {
-                "type": msg_type, "event": event.type.value, "text": text, "data": event.data
+                "type": msg_type,
+                "event": event.type.value,
+                "text": text,
+                "data": event.data,
+                "personality": personality.id,
+                "voice_reference_id": personality.voice_reference_id,
             })
         except Exception as e:
+            prefs = user_prefs.get(event.user_id, UserPrefs())
+            personality = get_personality(prefs.personality_id)
             await ws_manager.send_json(event.user_id, {
                 "type": "chat", "event": event.type.value,
-                "text": fallback_text_for(event), "data": event.data, "error": str(e)
+                "text": fallback_text_for(event, personality),
+                "data": event.data,
+                "error": str(e),
+                "personality": personality.id,
+                "voice_reference_id": personality.voice_reference_id,
             })
         finally:
             event_queue.task_done()
