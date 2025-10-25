@@ -3,20 +3,28 @@ import asyncio
 from datetime import datetime, timedelta, timezone
 from enum import Enum
 from typing import Dict, Optional, Set
-from dataclasses import dataclass
 
 from fastapi import FastAPI, UploadFile, File, WebSocket, WebSocketDisconnect, Body
 from fastapi.responses import StreamingResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic_settings import BaseSettings
 from pydantic import BaseModel
+from uuid import UUID, uuid4
+
+# --- Composio (optional) ---
+COMPOSIO_AVAILABLE = True
+try:
+    from composio import Composio
+except Exception:
+    COMPOSIO_AVAILABLE = False
+
 import requests  # REST fallback
+
 
 # ===================== Try Fish SDK (fallback to REST if import fails) =====================
 FISH_MODE = "rest"
 try:
     from fish_audio_sdk import Session, TTSRequest, ASRRequest, Prosody  # type: ignore
-    from fish_audio_sdk.exceptions import HttpCodeErr  # <-- added for precise catch
     FISH_MODE = "sdk"
 except Exception:
     FISH_MODE = "rest"
@@ -36,6 +44,11 @@ class Settings(BaseSettings):
     LETTA_BASE_URL: Optional[str] = None
     LETTA_AGENT_ID: Optional[str] = None
 
+    # Composio (Gmail)
+    COMPOSIO_API_KEY: Optional[str] = None
+    COMPOSIO_GMAIL_AUTH_CONFIG: Optional[str] = None  
+
+
     # Product logic
     FOLLOWUP_DELAY_SEC: int = int(os.getenv("FOLLOWUP_DELAY_SEC", "600"))
     DEFAULT_FOCUS_MIN: int = int(os.getenv("DEFAULT_FOCUS_MIN", "25"))
@@ -46,78 +59,6 @@ class Settings(BaseSettings):
 
 settings = Settings()
 
-# ===================== Personalities =====================
-@dataclass(frozen=True)
-class Personality:
-    id: str
-    title: str
-    description: str
-    style_prompt: str
-    voice_reference_id: Optional[str] = None
-    fallback_prefix: str = ""
-    fallback_suffix: str = ""
-
-
-DEFAULT_PERSONALITY_ID = "focus_friend"
-
-PERSONALITIES: Dict[str, Personality] = {
-    "focus_friend": Personality(
-        id="focus_friend",
-        title="Steady Focus Friend",
-        description=(
-            "A balanced accountability buddy who mixes cheer with calm, "
-            "keeps momentum going, and offers tiny nudges."
-        ),
-        style_prompt=(
-            "You are the Steady Focus Friend: a warm, supportive companion who blends gentle coaching "
-            "with practical next steps. Keep replies short (~20 words), encouraging, and grounded."
-        ),
-        fallback_prefix="Alright, teammate!",
-    ),
-    "hype_buddy": Personality(
-        id="hype_buddy",
-        title="High-Energy Hype Buddy",
-        description=(
-            "A big-energy cheerleader who celebrates every win and keeps things upbeat and motivating."
-        ),
-        style_prompt=(
-            "You are the High-Energy Hype Buddy: respond with enthusiastic, upbeat energy, lots of positive "
-            "reinforcement, and motivational sparks. Stay concise (~20 words)."
-        ),
-        fallback_prefix="Let's go!",
-        fallback_suffix="You've absolutely got this!",
-    ),
-    "zen_guide": Personality(
-        id="zen_guide",
-        title="Zen Focus Guide",
-        description=(
-            "A calm, mindful guide who keeps the user grounded with relaxed, reassuring language."
-        ),
-        style_prompt=(
-            "You are the Zen Focus Guide: speak in a calm, centered tone with mindful encouragement. "
-            "Keep messages brief (~20 words) and soothing."
-        ),
-        fallback_prefix="Deep breath—",
-    ),
-}
-
-
-def get_personality(personality_id: Optional[str]) -> Personality:
-    return PERSONALITIES.get(personality_id or "", PERSONALITIES[DEFAULT_PERSONALITY_ID])
-
-
-def personality_style_prompt(personality: Personality, base_instruction: str) -> str:
-    if not personality.style_prompt:
-        return base_instruction
-    return f"{personality.style_prompt.strip()} {base_instruction}".strip()
-
-
-def apply_personality_text(personality: Personality, text: str) -> str:
-    prefix = personality.fallback_prefix.strip()
-    suffix = personality.fallback_suffix.strip()
-    parts = [part for part in [prefix, text.strip(), suffix] if part]
-    return " ".join(parts)
-
 # ===================== FastAPI & CORS =====================
 app = FastAPI(title="BodyDouble — Letta + Fish Audio")
 app.add_middleware(
@@ -127,27 +68,6 @@ app.add_middleware(
 )
 
 # ===================== Fish Audio adapter layer =====================
-def _fish_tts_stream_rest(text: str, fmt: str, reference_id: Optional[str]):
-    """
-    Minimal REST call with required 'model' header; stream audio chunks.
-    """
-    url = "https://api.fish.audio/v1/tts"
-    headers = {
-        "Authorization": f"Bearer {settings.FISH_API_KEY}",
-        "Content-Type": "application/json",
-        "model": settings.FISH_MODEL or "s1",  # REST requires model header
-    }
-    payload = {"text": text, "format": fmt}
-    rid = reference_id or settings.FISH_VOICE_REFERENCE_ID
-    if rid:
-        payload["reference_id"] = rid
-
-    with requests.post(url, headers=headers, json=payload, stream=True, timeout=120) as r:
-        r.raise_for_status()
-        for chunk in r.iter_content(65536):
-            if chunk:
-                yield chunk
-
 def fish_tts_stream(
     text: str,
     fmt: str = "mp3",
@@ -155,58 +75,58 @@ def fish_tts_stream(
     speed: float = 1.0,
     volume: int = 0,
     latency: str = "balanced",
-    temperature: float = 0.7,  # kept in signature but NOT sent (minimize 400)
-    top_p: float = 0.7,        # kept in signature but NOT sent
+    temperature: float = 0.7,
+    top_p: float = 0.7,
 ):
-    """
-    Minimal SDK path based on official docs:
-      - Only pass text/format/reference_id/latency/Prosody (if non-default)
-      - If SDK raises (400/401/422/others), fall back to REST with 'model' header
-    """
+    """Yield an audio byte stream for TTS."""
     if FISH_MODE == "sdk":
+        # SDK mode
         session = Session(settings.FISH_API_KEY)
-        req_kwargs = {"text": text, "format": fmt, "latency": latency}
-        rid = reference_id or settings.FISH_VOICE_REFERENCE_ID
-        if rid:
-            req_kwargs["reference_id"] = rid
-        if speed != 1.0 or volume != 0:
-            req_kwargs["prosody"] = Prosody(speed=speed, volume=volume)
-
-        try:
-            req = TTSRequest(**req_kwargs)
-            for chunk in session.tts(req):
-                yield chunk
-            return
-        except Exception as e:
-            # Log briefly (optional)
-            try:
-                status = getattr(e, "status", None) or getattr(e, "status_code", None)
-                print(f"[Fish SDK] TTS failed with status={status}, falling back to REST.")
-            except Exception:
-                print("[Fish SDK] TTS failed, falling back to REST.")
-            # fall through to REST
-
-    # REST fallback (minimal fields)
-    yield from _fish_tts_stream_rest(text, fmt, reference_id)
+        req = TTSRequest(
+            text=text,
+            reference_id=reference_id or settings.FISH_VOICE_REFERENCE_ID,
+            format=fmt,
+            prosody=Prosody(speed=speed, volume=volume),
+            latency=latency,
+            temperature=temperature,
+            top_p=top_p,
+        )
+        gen = session.tts(req)
+        for chunk in gen:
+            yield chunk
+    else:
+        # REST mode
+        url = "https://api.fish.audio/v1/tts"
+        headers = {
+            "Authorization": f"Bearer {settings.FISH_API_KEY}",
+            "Content-Type": "application/json",
+            "model": settings.FISH_MODEL,
+        }
+        payload = {"text": text, "format": fmt}
+        if reference_id or settings.FISH_VOICE_REFERENCE_ID:
+            payload["reference_id"] = reference_id or settings.FISH_VOICE_REFERENCE_ID
+        with requests.post(url, headers=headers, json=payload, stream=True, timeout=120) as r:
+            r.raise_for_status()
+            for chunk in r.iter_content(65536):
+                if chunk:
+                    yield chunk
 
 def fish_asr(audio_bytes: bytes, language: str = "en"):
     """Return ASR result (text, duration) using SDK or REST."""
     if FISH_MODE == "sdk":
         session = Session(settings.FISH_API_KEY)
-        try:
-            res = session.asr(ASRRequest(audio=audio_bytes, language=language))
-            return {"text": res.text, "duration_ms": res.duration}
-        except Exception as e:
-            print("[Fish SDK] ASR failed; falling back to REST.", e)
-
-    url = "https://api.fish.audio/v1/asr"
-    headers = {"Authorization": f"Bearer {settings.FISH_API_KEY}"}
-    data = {"language": language, "ignore_timestamps": "true"}
-    files = {"audio": ("audio.wav", audio_bytes, "application/octet-stream")}
-    r = requests.post(url, headers=headers, data=data, files=files, timeout=120)
-    r.raise_for_status()
-    j = r.json()
-    return {"text": j.get("text", ""), "duration_ms": int(j.get("duration", 0) * 1000) if "duration" in j else None}
+        from fish_audio_sdk import ASRRequest  # type: ignore
+        res = session.asr(ASRRequest(audio=audio_bytes, language=language))
+        return {"text": res.text, "duration_ms": res.duration}
+    else:
+        url = "https://api.fish.audio/v1/asr"
+        headers = {"Authorization": f"Bearer {settings.FISH_API_KEY}"}
+        data = {"language": language, "ignore_timestamps": "true"}
+        files = {"audio": ("audio.wav", audio_bytes, "application/octet-stream")}
+        r = requests.post(url, headers=headers, data=data, files=files, timeout=120)
+        r.raise_for_status()
+        j = r.json()
+        return {"text": j.get("text", ""), "duration_ms": int(j.get("duration", 0) * 1000) if "duration" in j else None}
 
 # ===================== Letta client =====================
 if settings.LETTA_BASE_URL:
@@ -214,24 +134,15 @@ if settings.LETTA_BASE_URL:
 else:
     letta = Letta(token=settings.LETTA_API_KEY)
 
-def letta_generate_single(content: str, personality: Optional[Personality] = None) -> str:
+def letta_generate_single(content: str) -> str:
     """
     Send a single user message to Letta, return the assistant's text (STATEFUL pattern).
     """
     if not settings.LETTA_AGENT_ID:
         return ""  # allow fallback upstream
-    prompt = content
-    if personality:
-        instruction = personality_style_prompt(
-            personality,
-            "Respond in that persona. Keep it warm, actionable, and under ~20 words.",
-        )
-        prompt = (
-            f"{instruction}\n\nUser message: {content}\nAssistant:"
-        )
     resp = letta.agents.messages.create(
         agent_id=settings.LETTA_AGENT_ID,
-        messages=[{"role": "user", "content": prompt}],
+        messages=[{"role": "user", "content": content}],
     )
     for msg in getattr(resp, "messages", []):
         if getattr(msg, "message_type", "") == "assistant_message":
@@ -248,19 +159,13 @@ class SayIn(BaseModel):
     temperature: Optional[float] = 0.7
     top_p: Optional[float] = 0.7
     format: Optional[str] = "mp3"
-    user_id: Optional[str] = None
 
 @app.post("/voice/say", summary="Text-to-speech (streams mp3/wav)")
 def voice_say(payload: SayIn):
-    reference_id = payload.reference_id
-    if not reference_id and payload.user_id:
-        prefs = user_prefs.get(payload.user_id, UserPrefs())
-        personality = get_personality(prefs.personality_id)
-        reference_id = personality.voice_reference_id
     gen = fish_tts_stream(
         text=payload.text,
         fmt=payload.format or "mp3",
-        reference_id=reference_id,
+        reference_id=payload.reference_id,
         speed=payload.speed or 1.0,
         volume=payload.volume or 0,
         latency=payload.latency or "balanced",
@@ -276,14 +181,88 @@ async def voice_asr(file: UploadFile = File(...), language: str = "en"):
     res = fish_asr(audio_bytes, language)
     return JSONResponse(res)
 
-# (NEW) List voice models (SDK only)
-@app.get("/voice/models")
-def list_models(self_only: bool = True):
-    if FISH_MODE != "sdk":
-        return JSONResponse({"error": "SDK not available; cannot list models."}, status_code=400)
-    s = Session(settings.FISH_API_KEY)
-    models = s.list_models(self_only=self_only)
-    return {"items": [{"id": m.id, "title": m.title} for m in models.items]}
+# ===================== Composio client =====================
+composio_client = None
+if COMPOSIO_AVAILABLE and settings.COMPOSIO_API_KEY:
+    try:
+        composio_client = Composio(api_key=settings.COMPOSIO_API_KEY)
+        print("[Composio] client initialized")
+    except Exception as e:
+        print("[Composio] init failed:", e)
+
+def _ensure_uuid(s: Optional[str]) -> str:
+    """Composio 要求 user_id 为有效 UUID；没传或非法就生成一个。"""
+    if s:
+        try:
+            UUID(s)
+            return s
+        except Exception:
+            pass
+    return str(uuid4())
+
+
+# ===================== Composio Gmail integration =====================
+class GmailConnectIn(BaseModel):
+    user_id: Optional[str] = None  # 建议传入你自己的用户 UUID；不传则自动生成
+
+@app.post("/integrations/gmail/initiate", summary="Start Gmail OAuth via Composio")
+def composio_gmail_initiate(payload: GmailConnectIn):
+    if not COMPOSIO_AVAILABLE:
+        return JSONResponse({"error": "composio_not_installed"}, status_code=400)
+    if not composio_client:
+        return JSONResponse({"error": "composio_not_configured"}, status_code=400)
+    if not settings.COMPOSIO_GMAIL_AUTH_CONFIG:
+        return JSONResponse({"error": "missing_gmail_auth_config"}, status_code=400)
+
+    user_uuid = _ensure_uuid(payload.user_id)
+    try:
+        req = composio_client.connected_accounts.initiate(
+            user_id=user_uuid,
+            auth_config_id=settings.COMPOSIO_GMAIL_AUTH_CONFIG,
+        )
+        # 返回重定向链接，前端/终端打开完成 Google 授权
+        return {
+            "ok": True,
+            "user_id": user_uuid,
+            "connection_id": req.id,
+            "redirect_url": req.redirect_url,
+            "status": getattr(req, "status", None),
+        }
+    except Exception as e:
+        return JSONResponse({"error": "initiate_failed", "detail": str(e)}, status_code=500)
+
+
+@app.get("/integrations/gmail/status", summary="Check Gmail connection status")
+def composio_gmail_status(connection_id: str):
+    if not COMPOSIO_AVAILABLE:
+        return JSONResponse({"error": "composio_not_installed"}, status_code=400)
+    if not composio_client:
+        return JSONResponse({"error": "composio_not_configured"}, status_code=400)
+    if not connection_id:
+        return JSONResponse({"error": "missing_connection_id"}, status_code=400)
+
+    try:
+        acc = composio_client.connected_accounts.get(connection_id)
+        # 常见状态：PENDING / CONNECTED / FAILED
+        return {
+            "ok": True,
+            "connection_id": connection_id,
+            "status": getattr(acc, "status", None),
+            "provider": getattr(acc, "provider", None),
+            "created_at": getattr(acc, "created_at", None),
+        }
+    except Exception as e:
+        return JSONResponse({"error": "get_status_failed", "detail": str(e)}, status_code=500)
+
+
+@app.get("/integrations/composio/health", summary="Composio health check")
+def composio_health():
+    return {
+        "available": COMPOSIO_AVAILABLE,
+        "configured": bool(composio_client),
+        "has_gmail_auth_config": bool(settings.COMPOSIO_GMAIL_AUTH_CONFIG),
+    }
+
 
 # ===================== Events & WebSocket =====================
 class EventType(str, Enum):
@@ -342,23 +321,13 @@ async def ws_events(ws: WebSocket, user_id: str):
 # ===================== User preferences (Voice toggle) =====================
 class UserPrefs(BaseModel):
     voice_enabled: bool = True
-    personality_id: str = DEFAULT_PERSONALITY_ID
 
 user_prefs: Dict[str, UserPrefs] = {}
 
 @app.get("/prefs/{user_id}")
 def get_prefs(user_id: str):
     prefs = user_prefs.get(user_id, UserPrefs())
-    personality = get_personality(prefs.personality_id)
-    return {
-        "user_id": user_id,
-        "voice_enabled": prefs.voice_enabled,
-        "personality": {
-            "id": personality.id,
-            "title": personality.title,
-            "description": personality.description,
-        },
-    }
+    return {"user_id": user_id, "voice_enabled": prefs.voice_enabled}
 
 class VoiceToggleIn(BaseModel):
     enabled: bool
@@ -369,46 +338,6 @@ def set_voice_pref(user_id: str, payload: VoiceToggleIn):
     prefs.voice_enabled = payload.enabled
     user_prefs[user_id] = prefs
     return {"ok": True, "user_id": user_id, "voice_enabled": prefs.voice_enabled}
-
-
-class PersonalitySetIn(BaseModel):
-    personality_id: str
-
-
-@app.post("/prefs/{user_id}/personality")
-def set_personality_pref(user_id: str, payload: PersonalitySetIn):
-    if payload.personality_id not in PERSONALITIES:
-        return JSONResponse(
-            {"error": "unknown_personality", "available": list(PERSONALITIES.keys())},
-            status_code=400,
-        )
-    prefs = user_prefs.get(user_id, UserPrefs())
-    prefs.personality_id = payload.personality_id
-    user_prefs[user_id] = prefs
-    personality = get_personality(prefs.personality_id)
-    return {
-        "ok": True,
-        "user_id": user_id,
-        "personality": {
-            "id": personality.id,
-            "title": personality.title,
-            "description": personality.description,
-        },
-    }
-
-
-@app.get("/personalities")
-def list_personalities():
-    return {
-        "items": [
-            {
-                "id": p.id,
-                "title": p.title,
-                "description": p.description,
-            }
-            for p in PERSONALITIES.values()
-        ]
-    }
 
 # ===================== Pomodoro =====================
 class PomodoroRequest(BaseModel):
@@ -489,66 +418,49 @@ def chat_send(payload: ChatIn):
     """
     cancel_followup(payload.user_id)
 
-    prefs = user_prefs.get(payload.user_id, UserPrefs())
-    personality = get_personality(prefs.personality_id)
-
     # Ask Letta for a short English reply (fallback if Letta unavailable).
     prompt = payload.text.strip()
     reply = ""
     if prompt:
-        reply = letta_generate_single(prompt, personality=personality) or ""
+        reply = letta_generate_single(prompt) or ""
 
     if not reply:
-        reply = apply_personality_text(
-            personality,
-            "Got it—I’m here. Want me to break that into three small steps?",
-        )
+        reply = "Got it—I’m here. Want me to break that into three small steps?"
 
     # One-shot follow-up timer
     schedule_followup(payload.user_id, settings.FOLLOWUP_DELAY_SEC)
 
     # Suggest voice playback to the client only if the user prefers voice
-    return {
-        "text": reply,
-        "voice_suggested": bool(prefs.voice_enabled),
-        "personality": personality.id,
-    }
+    prefs = user_prefs.get(payload.user_id, UserPrefs())
+    return {"text": reply, "voice_suggested": bool(prefs.voice_enabled)}
 
 # ===================== Copy generation & Orchestrator =====================
-def fallback_text_for(event: Event, personality: Personality) -> str:
+def fallback_text_for(event: Event) -> str:
     if event.type == EventType.REMINDER_DUE:
         phase = event.data.get("phase")
         minutes = event.data.get("minutes")
         if phase == PomodoroPhase.FOCUS_START:
-            base = f"Starting a {minutes}-minute focus block—let’s do this!"
+            return f"Starting a {minutes}-minute focus block—let’s do this!"
         elif phase == PomodoroPhase.BREAK_START:
-            base = f"Break time for {minutes} minutes—water and a quick stretch!"
+            return f"Break time for {minutes} minutes—water and a quick stretch!"
         elif phase == PomodoroPhase.CYCLE_END:
-            base = "That round’s done. Start another?"
+            return "That round’s done. Start another?"
         else:
-            base = "All pomodoros done for today. Great job!"
+            return "All pomodoros done for today. Great job!"
     elif event.type == EventType.MSG_FOLLOWUP:
-        base = "Hey, still here—how’s it going? Want a tiny 5‑minute next step?"
-    else:
-        base = "You’ve got this!"
-    return apply_personality_text(personality, base)
+        return "Hey, still here—how’s it going? Want a tiny 5‑minute next step?"
+    return "You’ve got this!"
 
 async def generate_text_for_event(event: Event) -> str:
-    prefs = user_prefs.get(event.user_id, UserPrefs())
-    personality = get_personality(prefs.personality_id)
-
     if not settings.LETTA_AGENT_ID:
-        return fallback_text_for(event, personality)
+        return fallback_text_for(event)
 
     if event.type == EventType.REMINDER_DUE:
         phase = event.data.get("phase", "")
         minutes = event.data.get("minutes")
-        base = personality_style_prompt(
-            personality,
-            (
-                "You are a supportive, ADHD‑friendly companion coach. "
-                "Respond in ONE short, conversational English sentence (max ~20 words), friendly and positive."
-            ),
+        base = (
+            "You are a supportive, ADHD‑friendly companion coach. "
+            "Respond in ONE short, conversational English sentence (max ~20 words), friendly and positive."
         )
         if phase == PomodoroPhase.FOCUS_START:
             prompt = (
@@ -566,19 +478,16 @@ async def generate_text_for_event(event: Event) -> str:
         else:
             prompt = f"{base} All pomodoros are done today; celebrate and offer a short wrap‑up tip."
     elif event.type == EventType.MSG_FOLLOWUP:
-        base = personality_style_prompt(
-            personality,
-            (
-                "You are a caring friend. In ONE brief English sentence (~20 words), "
-                "lightly check on progress and suggest a tiny next step. Be empathetic and non‑pressuring."
-            ),
+        base = (
+            "You are a caring friend. In ONE brief English sentence (~20 words), "
+            "lightly check on progress and suggest a tiny next step. Be empathetic and non‑pressuring."
         )
         prompt = f"{base} The user has not replied for a while."
     else:
-        return fallback_text_for(event, personality)
+        return fallback_text_for(event)
 
-    text = letta_generate_single(prompt, personality=personality).strip()
-    return text or fallback_text_for(event, personality)
+    text = letta_generate_single(prompt).strip()
+    return text or fallback_text_for(event)
 
 async def voice_orchestrator():
     """
@@ -589,28 +498,16 @@ async def voice_orchestrator():
     while True:
         event: Event = await event_queue.get()
         try:
-            prefs = user_prefs.get(event.user_id, UserPrefs())
-            personality = get_personality(prefs.personality_id)
             text = await generate_text_for_event(event)
+            prefs = user_prefs.get(event.user_id, UserPrefs())
             msg_type = "speak" if prefs.voice_enabled else "chat"
             await ws_manager.send_json(event.user_id, {
-                "type": msg_type,
-                "event": event.type.value,
-                "text": text,
-                "data": event.data,
-                "personality": personality.id,
-                "voice_reference_id": personality.voice_reference_id,
+                "type": msg_type, "event": event.type.value, "text": text, "data": event.data
             })
         except Exception as e:
-            prefs = user_prefs.get(event.user_id, UserPrefs())
-            personality = get_personality(prefs.personality_id)
             await ws_manager.send_json(event.user_id, {
                 "type": "chat", "event": event.type.value,
-                "text": fallback_text_for(event, personality),
-                "data": event.data,
-                "error": str(e),
-                "personality": personality.id,
-                "voice_reference_id": personality.voice_reference_id,
+                "text": fallback_text_for(event), "data": event.data, "error": str(e)
             })
         finally:
             event_queue.task_done()
