@@ -142,27 +142,35 @@
 
 	<fieldset>
 		<legend>Voice</legend>
-		<div class="grid-3">
-			<div>
-				<label>Text</label>
-				<input id="sayText" type="text" value="Hello from BodyDouble" />
-				<label>Format</label>
-				<input id="sayFormat" type="text" value="mp3" />
-				<button id="btnSay">/voice/say</button>
-				<audio id="player" controls></audio>
-			</div>
-			<div>
-				<label>ASR upload (.wav)</label>
-				<input id="asrFile" type="file" accept="audio/*" />
-				<button id="btnAsr">/voice/asr</button>
-				<div class="muted" id="asrOut"></div>
-			</div>
-			<div>
-				<label>Voice preference</label>
-				<button id="btnVoiceOn">Enable voice</button>
-				<button id="btnVoiceOff">Disable voice</button>
-				<div class="muted" id="prefOut"></div>
-			</div>
+                <div class="grid-3">
+                        <div>
+                                <label>Text</label>
+                                <input id="sayText" type="text" value="Hello from BodyDouble" />
+                                <label>Format</label>
+                                <input id="sayFormat" type="text" value="mp3" />
+                                <button id="btnSay">/voice/say</button>
+                                <audio id="player" controls></audio>
+                        </div>
+                        <div>
+                                <label>ASR upload (.wav)</label>
+                                <input id="asrFile" type="file" accept="audio/*" />
+                                <button id="btnAsr">/voice/asr</button>
+                                <div class="muted" id="asrOut"></div>
+                        </div>
+                        <div>
+                                <label>Voice models</label>
+                                <button id="btnListVoices">/voice/models</button>
+                                <select id="voiceSelect">
+                                        <option value="">Default (personality/server)</option>
+                                </select>
+                                <div class="muted" id="voiceListOut"></div>
+                                <label>Override reference ID</label>
+                                <input id="voiceRef" type="text" placeholder="reference id (optional)" />
+                                <label>Voice preference</label>
+                                <button id="btnVoiceOn">Enable voice</button>
+                                <button id="btnVoiceOff">Disable voice</button>
+                                <div class="muted" id="prefOut"></div>
+                        </div>
 		</div>
 	</fieldset>
 
@@ -279,13 +287,26 @@
 			if (j.voice_suggested && j.text) say(j.text, 'mp3');
 		};
 
-		async function say(text, format) {
-			const r = await fetch(`${$("baseUrl").value}/voice/say`, {
-				method: 'POST', headers: {'content-type': 'application/json'},
-				body: JSON.stringify({text, format})
-			});
-			if (!r.ok || !r.body) {log('TTS failed', 'err'); return;}
-			const reader = r.body.getReader();
+                function selectedVoiceId() {
+                        const refEl = $("voiceRef");
+                        const ref = refEl ? refEl.value.trim() : "";
+                        if (ref) return ref;
+                        const select = $("voiceSelect");
+                        return select && select.value ? select.value : "";
+                }
+
+                async function say(text, format) {
+                        const payload = {text, format};
+                        const referenceId = selectedVoiceId();
+                        if (referenceId) payload.reference_id = referenceId;
+                        const userId = $("userId").value.trim();
+                        if (userId) payload.user_id = userId;
+                        const r = await fetch(`${$("baseUrl").value}/voice/say`, {
+                                method: 'POST', headers: {'content-type': 'application/json'},
+                                body: JSON.stringify(payload)
+                        });
+                        if (!r.ok || !r.body) {log('TTS failed', 'err'); return;}
+                        const reader = r.body.getReader();
 			const chunks = [];
 			while (true) {
 				const {value, done} = await reader.read();
@@ -310,10 +331,49 @@
 			$("asrOut").textContent = JSON.stringify(j);
 		};
 
-		$("btnVoiceOn").onclick = async () => {
-			const r = await fetch(`${$("baseUrl").value}/prefs/${encodeURIComponent($("userId").value)}/voice`, {
-				method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify({enabled: true})
-			});
+                $("btnListVoices").onclick = async () => {
+                        const out = $("voiceListOut");
+                        const select = $("voiceSelect");
+                        if (!select) return;
+                        if (out) out.textContent = 'Loading...';
+                        try {
+                                const r = await fetch(`${$("baseUrl").value}/voice/models`);
+                                const j = await r.json();
+                                if (!r.ok) {
+                                        if (out) out.textContent = j.error || 'error';
+                                        return;
+                                }
+                                while (select.options.length > 1) select.remove(1);
+                                if (!j.items || !j.items.length) {
+                                        if (out) out.textContent = 'No models found (SDK only).';
+                                        return;
+                                }
+                                j.items.forEach((m) => {
+                                        const opt = document.createElement('option');
+                                        opt.value = m.id;
+                                        opt.textContent = `${m.title || m.id}`;
+                                        select.appendChild(opt);
+                                });
+                                if (out) out.textContent = `Loaded ${j.items.length} models.`;
+                        } catch (e) {
+                                if (out) out.textContent = 'error';
+                        }
+                };
+
+                $("voiceSelect").onchange = () => {
+                        const select = $("voiceSelect");
+                        if (!select) return;
+                        const value = select.value;
+                        if (value) {
+                                const refEl = $("voiceRef");
+                                if (refEl) refEl.value = value;
+                        }
+                };
+
+                $("btnVoiceOn").onclick = async () => {
+                        const r = await fetch(`${$("baseUrl").value}/prefs/${encodeURIComponent($("userId").value)}/voice`, {
+                                method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify({enabled: true})
+                        });
 			const j = await r.json();
 			$("prefOut").textContent = JSON.stringify(j);
 		};
