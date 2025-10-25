@@ -1,0 +1,279 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+	<meta charset="utf-8" />
+	<meta name="viewport" content="width=device-width, initial-scale=1" />
+	<title>BodyDouble test client</title>
+	<style>
+		body {
+			font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+			margin: 24px;
+		}
+
+		fieldset {
+			border: 1px solid #ddd;
+			border-radius: 8px;
+			padding: 12px;
+			margin-bottom: 16px;
+		}
+
+		legend {
+			font-weight: 700;
+		}
+
+		label {
+			display: block;
+			margin: 6px 0 2px;
+		}
+
+		input[type="text"],
+		input[type="number"],
+		textarea {
+			width: 100%;
+			padding: 8px;
+			box-sizing: border-box;
+		}
+
+		button {
+			margin-top: 8px;
+			padding: 8px 12px;
+			cursor: pointer;
+		}
+
+		.row {
+			display: grid;
+			grid-template-columns: 1fr 1fr;
+			gap: 12px;
+		}
+
+		#log {
+			white-space: pre-wrap;
+			background: #fafafa;
+			border: 1px solid #eee;
+			padding: 10px;
+			height: 220px;
+			overflow: auto;
+		}
+
+		.ok {
+			color: #0a7;
+		}
+
+		.err {
+			color: #b00;
+		}
+
+		audio {
+			width: 100%;
+			margin-top: 8px;
+		}
+
+		.grid-3 {
+			display: grid;
+			grid-template-columns: repeat(3, 1fr);
+			gap: 12px;
+		}
+
+		.muted {
+			color: #666;
+			font-size: 12px;
+		}
+	</style>
+</head>
+
+<body>
+	<h1>BodyDouble test client</h1>
+	<p class="muted">Set base URL, connect WebSocket, try chat, TTS/ASR, and Pomodoro. Works with the FastAPI server
+		you started.</p>
+
+	<fieldset>
+		<legend>Config</legend>
+		<div class="row">
+			<div>
+				<label>API base URL</label>
+				<input id="baseUrl" type="text" value="http://localhost:8000" />
+			</div>
+			<div>
+				<label>User ID</label>
+				<input id="userId" type="text" value="alice" />
+			</div>
+		</div>
+		<div>
+			<button id="btnHealth">Health</button>
+			<span id="healthOut" class="muted"></span>
+		</div>
+	</fieldset>
+
+	<fieldset>
+		<legend>WebSocket events</legend>
+		<div>
+			<button id="btnWsConnect">Connect</button>
+			<button id="btnWsDisconnect">Disconnect</button>
+			<span id="wsState" class="muted">disconnected</span>
+		</div>
+		<div id="log"></div>
+	</fieldset>
+
+	<fieldset>
+		<legend>Chat</legend>
+		<label>Message</label>
+		<input id="chatText" type="text" value="hi" />
+		<button id="btnChatSend">/chat/send</button>
+		<div class="muted" id="chatResp"></div>
+	</fieldset>
+
+	<fieldset>
+		<legend>Voice</legend>
+		<div class="grid-3">
+			<div>
+				<label>Text</label>
+				<input id="sayText" type="text" value="Hello from BodyDouble" />
+				<label>Format</label>
+				<input id="sayFormat" type="text" value="mp3" />
+				<button id="btnSay">/voice/say</button>
+				<audio id="player" controls></audio>
+			</div>
+			<div>
+				<label>ASR upload (.wav)</label>
+				<input id="asrFile" type="file" accept="audio/*" />
+				<button id="btnAsr">/voice/asr</button>
+				<div class="muted" id="asrOut"></div>
+			</div>
+			<div>
+				<label>Voice preference</label>
+				<button id="btnVoiceOn">Enable voice</button>
+				<button id="btnVoiceOff">Disable voice</button>
+				<div class="muted" id="prefOut"></div>
+			</div>
+		</div>
+	</fieldset>
+
+	<fieldset>
+		<legend>Pomodoro</legend>
+		<div class="grid-3">
+			<div>
+				<label>Focus minutes</label>
+				<input id="focusMin" type="number" value="1" />
+			</div>
+			<div>
+				<label>Break minutes</label>
+				<input id="breakMin" type="number" value="1" />
+			</div>
+			<div>
+				<label>Cycles</label>
+				<input id="cycles" type="number" value="1" />
+			</div>
+		</div>
+		<button id="btnStartPom">/pomodoro/start</button>
+		<button id="btnStopPom">/pomodoro/stop</button>
+	</fieldset>
+
+	<script>
+		const $ = (id) => document.getElementById(id);
+		const logEl = $("log");
+		function log(msg, cls = "") {
+			const p = document.createElement("div");
+			p.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+			if (cls) p.className = cls;
+			logEl.appendChild(p); logEl.scrollTop = logEl.scrollHeight;
+		}
+
+		let ws;
+		function wsUrl() {return `${$("baseUrl").value.replace(/\/$/, "")}/ws/events/${encodeURIComponent($("userId").value)}`;}
+
+		$("btnWsConnect").onclick = () => {
+			if (ws && ws.readyState === WebSocket.OPEN) return;
+			ws = new WebSocket(wsUrl().replace(/^http/, 'ws'));
+			ws.onopen = () => {$("wsState").textContent = "connected"; log("WS open", "ok");};
+			ws.onclose = () => {$("wsState").textContent = "disconnected"; log("WS closed");};
+			ws.onerror = (e) => {log("WS error", "err");};
+			ws.onmessage = (ev) => {
+				try {
+					const data = JSON.parse(ev.data);
+					log(`event: ${data.event} type=${data.type} text=${data.text || ""}`);
+					if (data.type === 'speak' && data.text) {
+						// auto request TTS for the text
+						say(data.text, 'mp3');
+					}
+				} catch {log("non-JSON message");}
+			};
+		};
+		$("btnWsDisconnect").onclick = () => {if (ws) ws.close();};
+
+		$("btnHealth").onclick = async () => {
+			try {
+				const r = await fetch(`${$("baseUrl").value}/healthz`);
+				const j = await r.json();
+				$("healthOut").textContent = `ok=${j.ok} voice_backend=${j.voice_backend}`;
+			} catch (e) {$("healthOut").textContent = 'error';}
+		};
+
+		$("btnChatSend").onclick = async () => {
+			const payload = {user_id: $("userId").value, text: $("chatText").value};
+			const r = await fetch(`${$("baseUrl").value}/chat/send`, {method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify(payload)});
+			const j = await r.json();
+			$("chatResp").textContent = `reply: ${j.text} voice_suggested=${j.voice_suggested}`;
+			if (j.voice_suggested && j.text) say(j.text, 'mp3');
+		};
+
+		async function say(text, format) {
+			const r = await fetch(`${$("baseUrl").value}/voice/say`, {
+				method: 'POST', headers: {'content-type': 'application/json'},
+				body: JSON.stringify({text, format})
+			});
+			if (!r.ok || !r.body) {log('TTS failed', 'err'); return;}
+			const reader = r.body.getReader();
+			const chunks = [];
+			while (true) {
+				const {value, done} = await reader.read();
+				if (done) break;
+				if (value) chunks.push(value);
+			}
+			const blob = new Blob(chunks, {type: format === 'mp3' ? 'audio/mpeg' : 'audio/wav'});
+			const url = URL.createObjectURL(blob);
+			const audio = $("player");
+			audio.src = url; audio.play();
+		}
+
+		$("btnSay").onclick = () => say($("sayText").value, $("sayFormat").value || 'mp3');
+
+		$("btnAsr").onclick = async () => {
+			const f = $("asrFile").files[0];
+			if (!f) {log('pick a file', 'err'); return;}
+			const fd = new FormData();
+			fd.append('file', f);
+			const r = await fetch(`${$("baseUrl").value}/voice/asr`, {method: 'POST', body: fd});
+			const j = await r.json();
+			$("asrOut").textContent = JSON.stringify(j);
+		};
+
+		$("btnVoiceOn").onclick = async () => {
+			const r = await fetch(`${$("baseUrl").value}/prefs/${encodeURIComponent($("userId").value)}/voice`, {
+				method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify({enabled: true})
+			});
+			const j = await r.json();
+			$("prefOut").textContent = JSON.stringify(j);
+		};
+		$("btnVoiceOff").onclick = async () => {
+			const r = await fetch(`${$("baseUrl").value}/prefs/${encodeURIComponent($("userId").value)}/voice`, {
+				method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify({enabled: false})
+			});
+			const j = await r.json();
+			$("prefOut").textContent = JSON.stringify(j);
+		};
+
+		$("btnStartPom").onclick = async () => {
+			const payload = {user_id: $("userId").value, focus_min: +$("focusMin").value, break_min: +$("breakMin").value, cycles: +$("cycles").value};
+			const r = await fetch(`${$("baseUrl").value}/pomodoro/start`, {method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify(payload)});
+			log(`pomodoro/start ${r.ok ? 'ok' : 'err'}`);
+		};
+		$("btnStopPom").onclick = async () => {
+			const payload = {user_id: $("userId").value};
+			const r = await fetch(`${$("baseUrl").value}/pomodoro/stop`, {method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify(payload)});
+			log(`pomodoro/stop ${r.ok ? 'ok' : 'err'}`);
+		};
+	</script>
+</body>
+
+</html>
