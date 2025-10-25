@@ -87,12 +87,12 @@
 	<p class="muted">Set base URL, connect WebSocket, try chat, TTS/ASR, and Pomodoro. Works with the FastAPI server
 		you started.</p>
 
-        <fieldset>
-                <legend>Config</legend>
-                <div class="row">
-                        <div>
-                                <label>API base URL</label>
-                                <input id="baseUrl" type="text" value="http://localhost:8000" />
+	<fieldset>
+		<legend>Config</legend>
+		<div class="row">
+			<div>
+				<label>API base URL</label>
+				<input id="baseUrl" type="text" value="http://localhost:8000" />
 			</div>
 			<div>
 				<label>User ID</label>
@@ -102,30 +102,30 @@
 		<div>
 			<button id="btnHealth">Health</button>
 			<span id="healthOut" class="muted"></span>
-                </div>
-        </fieldset>
+		</div>
+	</fieldset>
 
-        <fieldset>
-                <legend>Personality</legend>
-                <div class="row">
-                        <div>
-                                <label>Available personalities</label>
-                                <button id="btnListPersonalities">/personalities</button>
-                                <div class="muted" id="personalitiesOut"></div>
-                        </div>
-                        <div>
-                                <label>Set personality ID</label>
-                                <input id="personalityId" type="text" placeholder="focus_friend" />
-                                <button id="btnSetPersonality">/prefs/{user}/personality</button>
-                                <div class="muted" id="personalitySetOut"></div>
-                        </div>
-                </div>
-        </fieldset>
+	<fieldset>
+		<legend>Personality</legend>
+		<div class="row">
+			<div>
+				<label>Available personalities</label>
+				<button id="btnListPersonalities">/personalities</button>
+				<div class="muted" id="personalitiesOut"></div>
+			</div>
+			<div>
+				<label>Set personality ID</label>
+				<input id="personalityId" type="text" placeholder="focus_friend" />
+				<button id="btnSetPersonality">/prefs/{user}/personality</button>
+				<div class="muted" id="personalitySetOut"></div>
+			</div>
+		</div>
+	</fieldset>
 
-        <fieldset>
-                <legend>WebSocket events</legend>
-                <div>
-                        <button id="btnWsConnect">Connect</button>
+	<fieldset>
+		<legend>WebSocket events</legend>
+		<div>
+			<button id="btnWsConnect">Connect</button>
 			<button id="btnWsDisconnect">Disconnect</button>
 			<span id="wsState" class="muted">disconnected</span>
 		</div>
@@ -142,35 +142,35 @@
 
 	<fieldset>
 		<legend>Voice</legend>
-                <div class="grid-3">
-                        <div>
-                                <label>Text</label>
-                                <input id="sayText" type="text" value="Hello from BodyDouble" />
-                                <label>Format</label>
-                                <input id="sayFormat" type="text" value="mp3" />
-                                <button id="btnSay">/voice/say</button>
-                                <audio id="player" controls></audio>
-                        </div>
-                        <div>
-                                <label>ASR upload (.wav)</label>
-                                <input id="asrFile" type="file" accept="audio/*" />
-                                <button id="btnAsr">/voice/asr</button>
-                                <div class="muted" id="asrOut"></div>
-                        </div>
-                        <div>
-                                <label>Voice models</label>
-                                <button id="btnListVoices">/voice/models</button>
-                                <select id="voiceSelect">
-                                        <option value="">Default (personality/server)</option>
-                                </select>
-                                <div class="muted" id="voiceListOut"></div>
-                                <label>Override reference ID</label>
-                                <input id="voiceRef" type="text" placeholder="reference id (optional)" />
-                                <label>Voice preference</label>
-                                <button id="btnVoiceOn">Enable voice</button>
-                                <button id="btnVoiceOff">Disable voice</button>
-                                <div class="muted" id="prefOut"></div>
-                        </div>
+		<div class="grid-3">
+			<div>
+				<label>Text</label>
+				<input id="sayText" type="text" value="Hello from BodyDouble" />
+				<label>Format</label>
+				<input id="sayFormat" type="text" value="mp3" />
+				<button id="btnSay">/voice/say</button>
+				<audio id="player" controls></audio>
+			</div>
+			<div>
+				<label>ASR upload (.wav)</label>
+				<input id="asrFile" type="file" accept="audio/*" />
+				<button id="btnAsr">/voice/asr</button>
+				<div class="muted" id="asrOut"></div>
+			</div>
+			<div>
+				<label>Voice models</label>
+				<button id="btnListVoices">/voice/models</button>
+				<select id="voiceSelect">
+					<option value="">Default (personality/server)</option>
+				</select>
+				<div class="muted" id="voiceListOut"></div>
+				<label>Override reference ID</label>
+				<input id="voiceRef" type="text" placeholder="reference id (optional)" />
+				<label>Voice preference</label>
+				<button id="btnVoiceOn">Enable voice</button>
+				<button id="btnVoiceOff">Disable voice</button>
+				<div class="muted" id="prefOut"></div>
+			</div>
 		</div>
 	</fieldset>
 
@@ -179,15 +179,15 @@
 		<div class="grid-3">
 			<div>
 				<label>Focus minutes</label>
-				<input id="focusMin" type="number" value="1" />
+				<input id="focusMin" type="number" value="25" />
 			</div>
 			<div>
 				<label>Break minutes</label>
-				<input id="breakMin" type="number" value="1" />
+				<input id="breakMin" type="number" value="5" />
 			</div>
 			<div>
 				<label>Cycles</label>
-				<input id="cycles" type="number" value="1" />
+				<input id="cycles" type="number" value="3" />
 			</div>
 		</div>
 		<button id="btnStartPom">/pomodoro/start</button>
@@ -226,87 +226,87 @@
 		};
 		$("btnWsDisconnect").onclick = () => {if (ws) ws.close();};
 
-                $("btnHealth").onclick = async () => {
-                        try {
-                                const r = await fetch(`${$("baseUrl").value}/healthz`);
-                                const j = await r.json();
-                                $("healthOut").textContent = `ok=${j.ok} voice_backend=${j.voice_backend}`;
-                        } catch (e) {$("healthOut").textContent = 'error';}
-                };
+		$("btnHealth").onclick = async () => {
+			try {
+				const r = await fetch(`${$("baseUrl").value}/healthz`);
+				const j = await r.json();
+				$("healthOut").textContent = `ok=${j.ok} voice_backend=${j.voice_backend}`;
+			} catch (e) {$("healthOut").textContent = 'error';}
+		};
 
-                $("btnListPersonalities").onclick = async () => {
-                        const container = $("personalitiesOut");
-                        container.textContent = 'Loading...';
-                        try {
-                                const r = await fetch(`${$("baseUrl").value}/personalities`);
-                                const j = await r.json();
-                                while (container.firstChild) container.removeChild(container.firstChild);
-                                if (!j.items || !j.items.length) {
-                                        container.textContent = 'None';
-                                        return;
-                                }
-                                j.items.forEach((p) => {
-                                        const line = document.createElement('div');
-                                        line.textContent = `${p.id} — ${p.title}`;
-                                        container.appendChild(line);
-                                });
-                        } catch (e) {
-                                container.textContent = 'error';
-                        }
-                };
+		$("btnListPersonalities").onclick = async () => {
+			const container = $("personalitiesOut");
+			container.textContent = 'Loading...';
+			try {
+				const r = await fetch(`${$("baseUrl").value}/personalities`);
+				const j = await r.json();
+				while (container.firstChild) container.removeChild(container.firstChild);
+				if (!j.items || !j.items.length) {
+					container.textContent = 'None';
+					return;
+				}
+				j.items.forEach((p) => {
+					const line = document.createElement('div');
+					line.textContent = `${p.id} — ${p.title}`;
+					container.appendChild(line);
+				});
+			} catch (e) {
+				container.textContent = 'error';
+			}
+		};
 
-                $("btnSetPersonality").onclick = async () => {
-                        const personalityId = $("personalityId").value.trim();
-                        if (!personalityId) {
-                                $("personalitySetOut").textContent = 'enter an id';
-                                return;
-                        }
-                        $("personalitySetOut").textContent = 'Saving...';
-                        try {
-                                const r = await fetch(`${$("baseUrl").value}/prefs/${encodeURIComponent($("userId").value)}/personality`, {
-                                        method: 'POST',
-                                        headers: {'content-type': 'application/json'},
-                                        body: JSON.stringify({personality_id: personalityId}),
-                                });
-                                const j = await r.json();
-                                if (!r.ok) {
-                                        $("personalitySetOut").textContent = `error: ${j.error || 'unknown'}`;
-                                        return;
-                                }
-                                $("personalitySetOut").textContent = `set to ${j.personality.id}`;
-                        } catch (e) {
-                                $("personalitySetOut").textContent = 'error';
-                        }
-                };
+		$("btnSetPersonality").onclick = async () => {
+			const personalityId = $("personalityId").value.trim();
+			if (!personalityId) {
+				$("personalitySetOut").textContent = 'enter an id';
+				return;
+			}
+			$("personalitySetOut").textContent = 'Saving...';
+			try {
+				const r = await fetch(`${$("baseUrl").value}/prefs/${encodeURIComponent($("userId").value)}/personality`, {
+					method: 'POST',
+					headers: {'content-type': 'application/json'},
+					body: JSON.stringify({personality_id: personalityId}),
+				});
+				const j = await r.json();
+				if (!r.ok) {
+					$("personalitySetOut").textContent = `error: ${j.error || 'unknown'}`;
+					return;
+				}
+				$("personalitySetOut").textContent = `set to ${j.personality.id}`;
+			} catch (e) {
+				$("personalitySetOut").textContent = 'error';
+			}
+		};
 
-                $("btnChatSend").onclick = async () => {
-                        const payload = {user_id: $("userId").value, text: $("chatText").value};
-                        const r = await fetch(`${$("baseUrl").value}/chat/send`, {method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify(payload)});
+		$("btnChatSend").onclick = async () => {
+			const payload = {user_id: $("userId").value, text: $("chatText").value};
+			const r = await fetch(`${$("baseUrl").value}/chat/send`, {method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify(payload)});
 			const j = await r.json();
 			$("chatResp").textContent = `reply: ${j.text} voice_suggested=${j.voice_suggested}`;
 			if (j.voice_suggested && j.text) say(j.text, 'mp3');
 		};
 
-                function selectedVoiceId() {
-                        const refEl = $("voiceRef");
-                        const ref = refEl ? refEl.value.trim() : "";
-                        if (ref) return ref;
-                        const select = $("voiceSelect");
-                        return select && select.value ? select.value : "";
-                }
+		function selectedVoiceId() {
+			const refEl = $("voiceRef");
+			const ref = refEl ? refEl.value.trim() : "";
+			if (ref) return ref;
+			const select = $("voiceSelect");
+			return select && select.value ? select.value : "";
+		}
 
-                async function say(text, format) {
-                        const payload = {text, format};
-                        const referenceId = selectedVoiceId();
-                        if (referenceId) payload.reference_id = referenceId;
-                        const userId = $("userId").value.trim();
-                        if (userId) payload.user_id = userId;
-                        const r = await fetch(`${$("baseUrl").value}/voice/say`, {
-                                method: 'POST', headers: {'content-type': 'application/json'},
-                                body: JSON.stringify(payload)
-                        });
-                        if (!r.ok || !r.body) {log('TTS failed', 'err'); return;}
-                        const reader = r.body.getReader();
+		async function say(text, format) {
+			const payload = {text, format};
+			const referenceId = selectedVoiceId();
+			if (referenceId) payload.reference_id = referenceId;
+			const userId = $("userId").value.trim();
+			if (userId) payload.user_id = userId;
+			const r = await fetch(`${$("baseUrl").value}/voice/say`, {
+				method: 'POST', headers: {'content-type': 'application/json'},
+				body: JSON.stringify(payload)
+			});
+			if (!r.ok || !r.body) {log('TTS failed', 'err'); return;}
+			const reader = r.body.getReader();
 			const chunks = [];
 			while (true) {
 				const {value, done} = await reader.read();
@@ -331,49 +331,49 @@
 			$("asrOut").textContent = JSON.stringify(j);
 		};
 
-                $("btnListVoices").onclick = async () => {
-                        const out = $("voiceListOut");
-                        const select = $("voiceSelect");
-                        if (!select) return;
-                        if (out) out.textContent = 'Loading...';
-                        try {
-                                const r = await fetch(`${$("baseUrl").value}/voice/models`);
-                                const j = await r.json();
-                                if (!r.ok) {
-                                        if (out) out.textContent = j.error || 'error';
-                                        return;
-                                }
-                                while (select.options.length > 1) select.remove(1);
-                                if (!j.items || !j.items.length) {
-                                        if (out) out.textContent = 'No models found (SDK only).';
-                                        return;
-                                }
-                                j.items.forEach((m) => {
-                                        const opt = document.createElement('option');
-                                        opt.value = m.id;
-                                        opt.textContent = `${m.title || m.id}`;
-                                        select.appendChild(opt);
-                                });
-                                if (out) out.textContent = `Loaded ${j.items.length} models.`;
-                        } catch (e) {
-                                if (out) out.textContent = 'error';
-                        }
-                };
+		$("btnListVoices").onclick = async () => {
+			const out = $("voiceListOut");
+			const select = $("voiceSelect");
+			if (!select) return;
+			if (out) out.textContent = 'Loading...';
+			try {
+				const r = await fetch(`${$("baseUrl").value}/voice/models`);
+				const j = await r.json();
+				if (!r.ok) {
+					if (out) out.textContent = j.error || 'error';
+					return;
+				}
+				while (select.options.length > 1) select.remove(1);
+				if (!j.items || !j.items.length) {
+					if (out) out.textContent = 'No models found (SDK only).';
+					return;
+				}
+				j.items.forEach((m) => {
+					const opt = document.createElement('option');
+					opt.value = m.id;
+					opt.textContent = `${m.title || m.id}`;
+					select.appendChild(opt);
+				});
+				if (out) out.textContent = `Loaded ${j.items.length} models.`;
+			} catch (e) {
+				if (out) out.textContent = 'error';
+			}
+		};
 
-                $("voiceSelect").onchange = () => {
-                        const select = $("voiceSelect");
-                        if (!select) return;
-                        const value = select.value;
-                        if (value) {
-                                const refEl = $("voiceRef");
-                                if (refEl) refEl.value = value;
-                        }
-                };
+		$("voiceSelect").onchange = () => {
+			const select = $("voiceSelect");
+			if (!select) return;
+			const value = select.value;
+			if (value) {
+				const refEl = $("voiceRef");
+				if (refEl) refEl.value = value;
+			}
+		};
 
-                $("btnVoiceOn").onclick = async () => {
-                        const r = await fetch(`${$("baseUrl").value}/prefs/${encodeURIComponent($("userId").value)}/voice`, {
-                                method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify({enabled: true})
-                        });
+		$("btnVoiceOn").onclick = async () => {
+			const r = await fetch(`${$("baseUrl").value}/prefs/${encodeURIComponent($("userId").value)}/voice`, {
+				method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify({enabled: true})
+			});
 			const j = await r.json();
 			$("prefOut").textContent = JSON.stringify(j);
 		};
