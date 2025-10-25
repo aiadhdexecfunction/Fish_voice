@@ -252,11 +252,16 @@ class SayIn(BaseModel):
 
 @app.post("/voice/say", summary="Text-to-speech (streams mp3/wav)")
 def voice_say(payload: SayIn):
-    reference_id = payload.reference_id
-    if not reference_id and payload.user_id:
-        prefs = user_prefs.get(payload.user_id, UserPrefs())
+    prefs: Optional[UserPrefs] = None
+    personality: Optional[Personality] = None
+    if payload.user_id:
+        prefs = get_user_prefs(payload.user_id)
         personality = get_personality(prefs.personality_id)
-        reference_id = personality.voice_reference_id
+    reference_id = resolve_voice_reference_id(
+        override_reference_id=payload.reference_id,
+        prefs=prefs,
+        personality=personality,
+    )
     gen = fish_tts_stream(
         text=payload.text,
         fmt=payload.format or "mp3",
@@ -343,16 +348,61 @@ async def ws_events(ws: WebSocket, user_id: str):
 class UserPrefs(BaseModel):
     voice_enabled: bool = True
     personality_id: str = DEFAULT_PERSONALITY_ID
+    voice_reference_id: Optional[str] = None
+
 
 user_prefs: Dict[str, UserPrefs] = {}
 
+
+def get_user_prefs(user_id: str) -> UserPrefs:
+    prefs = user_prefs.get(user_id)
+    if prefs is None:
+        prefs = UserPrefs()
+        user_prefs[user_id] = prefs
+    return prefs
+
+
+def resolve_voice_reference_id(
+    *,
+    override_reference_id: Optional[str] = None,
+    prefs: Optional[UserPrefs] = None,
+    personality: Optional[Personality] = None,
+) -> Optional[str]:
+    rid = (override_reference_id or "").strip()
+    if rid:
+        return rid
+
+    if prefs and prefs.voice_reference_id:
+        rid = prefs.voice_reference_id.strip()
+        if rid:
+            return rid
+
+    if personality is None and prefs is not None:
+        personality = get_personality(prefs.personality_id)
+
+    if personality and personality.voice_reference_id:
+        rid = personality.voice_reference_id.strip()
+        if rid:
+            return rid
+
+    rid = (settings.FISH_VOICE_REFERENCE_ID or "").strip()
+    return rid or None
+
+
+def effective_voice_reference_id(prefs: UserPrefs) -> Optional[str]:
+    personality = get_personality(prefs.personality_id)
+    return resolve_voice_reference_id(prefs=prefs, personality=personality)
+
+
 @app.get("/prefs/{user_id}")
 def get_prefs(user_id: str):
-    prefs = user_prefs.get(user_id, UserPrefs())
+    prefs = get_user_prefs(user_id)
     personality = get_personality(prefs.personality_id)
     return {
         "user_id": user_id,
         "voice_enabled": prefs.voice_enabled,
+        "voice_reference_id": prefs.voice_reference_id,
+        "effective_voice_reference_id": effective_voice_reference_id(prefs),
         "personality": {
             "id": personality.id,
             "title": personality.title,
@@ -360,15 +410,30 @@ def get_prefs(user_id: str):
         },
     }
 
-class VoiceToggleIn(BaseModel):
-    enabled: bool
+
+class VoicePrefsIn(BaseModel):
+    enabled: Optional[bool] = None
+    reference_id: Optional[str] = None
+
 
 @app.post("/prefs/{user_id}/voice")
-def set_voice_pref(user_id: str, payload: VoiceToggleIn):
-    prefs = user_prefs.get(user_id, UserPrefs())
-    prefs.voice_enabled = payload.enabled
+def set_voice_pref(user_id: str, payload: VoicePrefsIn):
+    prefs = get_user_prefs(user_id)
+    if payload.enabled is not None:
+        prefs.voice_enabled = payload.enabled
+
+    if payload.reference_id is not None:
+        rid = (payload.reference_id or "").strip() or None
+        prefs.voice_reference_id = rid
+
     user_prefs[user_id] = prefs
-    return {"ok": True, "user_id": user_id, "voice_enabled": prefs.voice_enabled}
+    return {
+        "ok": True,
+        "user_id": user_id,
+        "voice_enabled": prefs.voice_enabled,
+        "voice_reference_id": prefs.voice_reference_id,
+        "effective_voice_reference_id": effective_voice_reference_id(prefs),
+    }
 
 
 class PersonalitySetIn(BaseModel):
@@ -382,9 +447,8 @@ def set_personality_pref(user_id: str, payload: PersonalitySetIn):
             {"error": "unknown_personality", "available": list(PERSONALITIES.keys())},
             status_code=400,
         )
-    prefs = user_prefs.get(user_id, UserPrefs())
+    prefs = get_user_prefs(user_id)
     prefs.personality_id = payload.personality_id
-    user_prefs[user_id] = prefs
     personality = get_personality(prefs.personality_id)
     return {
         "ok": True,
@@ -394,6 +458,7 @@ def set_personality_pref(user_id: str, payload: PersonalitySetIn):
             "title": personality.title,
             "description": personality.description,
         },
+        "effective_voice_reference_id": effective_voice_reference_id(prefs),
     }
 
 
@@ -489,7 +554,7 @@ def chat_send(payload: ChatIn):
     """
     cancel_followup(payload.user_id)
 
-    prefs = user_prefs.get(payload.user_id, UserPrefs())
+    prefs = get_user_prefs(payload.user_id)
     personality = get_personality(prefs.personality_id)
 
     # Ask Letta for a short English reply (fallback if Letta unavailable).
@@ -511,6 +576,7 @@ def chat_send(payload: ChatIn):
     return {
         "text": reply,
         "voice_suggested": bool(prefs.voice_enabled),
+        "voice_reference_id": resolve_voice_reference_id(prefs=prefs, personality=personality),
         "personality": personality.id,
     }
 
@@ -534,7 +600,7 @@ def fallback_text_for(event: Event, personality: Personality) -> str:
     return apply_personality_text(personality, base)
 
 async def generate_text_for_event(event: Event) -> str:
-    prefs = user_prefs.get(event.user_id, UserPrefs())
+    prefs = get_user_prefs(event.user_id)
     personality = get_personality(prefs.personality_id)
 
     if not settings.LETTA_AGENT_ID:
@@ -589,8 +655,9 @@ async def voice_orchestrator():
     while True:
         event: Event = await event_queue.get()
         try:
-            prefs = user_prefs.get(event.user_id, UserPrefs())
+            prefs = get_user_prefs(event.user_id)
             personality = get_personality(prefs.personality_id)
+            voice_reference_id = resolve_voice_reference_id(prefs=prefs, personality=personality)
             text = await generate_text_for_event(event)
             msg_type = "speak" if prefs.voice_enabled else "chat"
             await ws_manager.send_json(event.user_id, {
@@ -599,18 +666,19 @@ async def voice_orchestrator():
                 "text": text,
                 "data": event.data,
                 "personality": personality.id,
-                "voice_reference_id": personality.voice_reference_id,
+                "voice_reference_id": voice_reference_id,
             })
         except Exception as e:
-            prefs = user_prefs.get(event.user_id, UserPrefs())
+            prefs = get_user_prefs(event.user_id)
             personality = get_personality(prefs.personality_id)
+            voice_reference_id = resolve_voice_reference_id(prefs=prefs, personality=personality)
             await ws_manager.send_json(event.user_id, {
                 "type": "chat", "event": event.type.value,
                 "text": fallback_text_for(event, personality),
                 "data": event.data,
                 "error": str(e),
                 "personality": personality.id,
-                "voice_reference_id": personality.voice_reference_id,
+                "voice_reference_id": voice_reference_id,
             })
         finally:
             event_queue.task_done()

@@ -142,29 +142,41 @@
 
 	<fieldset>
 		<legend>Voice</legend>
-		<div class="grid-3">
-			<div>
-				<label>Text</label>
-				<input id="sayText" type="text" value="Hello from BodyDouble" />
-				<label>Format</label>
-				<input id="sayFormat" type="text" value="mp3" />
-				<button id="btnSay">/voice/say</button>
-				<audio id="player" controls></audio>
-			</div>
-			<div>
-				<label>ASR upload (.wav)</label>
-				<input id="asrFile" type="file" accept="audio/*" />
-				<button id="btnAsr">/voice/asr</button>
-				<div class="muted" id="asrOut"></div>
-			</div>
-			<div>
-				<label>Voice preference</label>
-				<button id="btnVoiceOn">Enable voice</button>
-				<button id="btnVoiceOff">Disable voice</button>
-				<div class="muted" id="prefOut"></div>
-			</div>
-		</div>
-	</fieldset>
+                <div class="grid-3">
+                        <div>
+                                <label>Text</label>
+                                <input id="sayText" type="text" value="Hello from BodyDouble" />
+                                <label>Format</label>
+                                <input id="sayFormat" type="text" value="mp3" />
+                                <label>Override reference (optional)</label>
+                                <input id="sayVoiceOverride" type="text" placeholder="reference id" />
+                                <button id="btnSay">/voice/say</button>
+                                <audio id="player" controls></audio>
+                        </div>
+                        <div>
+                                <label>ASR upload (.wav)</label>
+                                <input id="asrFile" type="file" accept="audio/*" />
+                                <button id="btnAsr">/voice/asr</button>
+                                <div class="muted" id="asrOut"></div>
+                        </div>
+                        <div>
+                                <label>Voice preference</label>
+                                <button id="btnVoiceOn">Enable voice</button>
+                                <button id="btnVoiceOff">Disable voice</button>
+                                <button id="btnVoiceRefresh">Refresh /prefs</button>
+                                <div class="muted" id="prefOut"></div>
+                                <label for="voiceReferenceIdInput">Voice reference ID</label>
+                                <input id="voiceReferenceIdInput" type="text" placeholder="leave blank for default" />
+                                <button id="btnVoiceApply">Save voice</button>
+                                <label for="voiceSelect">Available voices</label>
+                                <button id="btnVoiceList">/voice/models</button>
+                                <select id="voiceSelect" size="5">
+                                        <option value="">Default (personality/system)</option>
+                                </select>
+                                <div class="muted" id="voicesOut"></div>
+                        </div>
+                </div>
+        </fieldset>
 
 	<fieldset>
 		<legend>Pomodoro</legend>
@@ -187,13 +199,38 @@
 	</fieldset>
 
 	<script>
-		const $ = (id) => document.getElementById(id);
-		const logEl = $("log");
-		function log(msg, cls = "") {
-			const p = document.createElement("div");
-			p.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
-			if (cls) p.className = cls;
-			logEl.appendChild(p); logEl.scrollTop = logEl.scrollHeight;
+                const $ = (id) => document.getElementById(id);
+                const logEl = $("log");
+                const voiceSelect = $("voiceSelect");
+                const voiceInput = $("voiceReferenceIdInput");
+                const voicesOut = $("voicesOut");
+                const prefOut = $("prefOut");
+                const sayVoiceOverride = $("sayVoiceOverride");
+
+                const currentBaseUrl = () => $("baseUrl").value.replace(/\/$/, "");
+                const currentUserId = () => $("userId").value;
+
+                function syncVoiceSelectWithInput() {
+                        if (!voiceSelect) return;
+                        const target = (voiceInput?.value || "").trim();
+                        let matched = false;
+                        for (const opt of voiceSelect.options) {
+                                if (opt.value === target) {
+                                        voiceSelect.value = target;
+                                        matched = true;
+                                        break;
+                                }
+                        }
+                        if (!matched) {
+                                voiceSelect.value = "";
+                        }
+                }
+
+                function log(msg, cls = "") {
+                        const p = document.createElement("div");
+                        p.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+                        if (cls) p.className = cls;
+                        logEl.appendChild(p); logEl.scrollTop = logEl.scrollHeight;
 		}
 
 		let ws;
@@ -205,17 +242,17 @@
 			ws.onopen = () => {$("wsState").textContent = "connected"; log("WS open", "ok");};
 			ws.onclose = () => {$("wsState").textContent = "disconnected"; log("WS closed");};
 			ws.onerror = (e) => {log("WS error", "err");};
-			ws.onmessage = (ev) => {
-				try {
-					const data = JSON.parse(ev.data);
-					log(`event: ${data.event} type=${data.type} text=${data.text || ""}`);
-					if (data.type === 'speak' && data.text) {
-						// auto request TTS for the text
-						say(data.text, 'mp3');
-					}
-				} catch {log("non-JSON message");}
-			};
-		};
+                        ws.onmessage = (ev) => {
+                                try {
+                                        const data = JSON.parse(ev.data);
+                                        log(`event: ${data.event} type=${data.type} text=${data.text || ""}`);
+                                        if (data.type === 'speak' && data.text) {
+                                                // auto request TTS for the text
+                                                say(data.text, 'mp3', data.voice_reference_id);
+                                        }
+                                } catch {log("non-JSON message");}
+                        };
+                };
 		$("btnWsDisconnect").onclick = () => {if (ws) ws.close();};
 
                 $("btnHealth").onclick = async () => {
@@ -266,26 +303,30 @@
                                         return;
                                 }
                                 $("personalitySetOut").textContent = `set to ${j.personality.id}`;
+                                refreshPrefs();
                         } catch (e) {
                                 $("personalitySetOut").textContent = 'error';
                         }
                 };
 
                 $("btnChatSend").onclick = async () => {
-                        const payload = {user_id: $("userId").value, text: $("chatText").value};
-                        const r = await fetch(`${$("baseUrl").value}/chat/send`, {method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify(payload)});
-			const j = await r.json();
-			$("chatResp").textContent = `reply: ${j.text} voice_suggested=${j.voice_suggested}`;
-			if (j.voice_suggested && j.text) say(j.text, 'mp3');
-		};
+                        const payload = {user_id: currentUserId(), text: $("chatText").value};
+                        const r = await fetch(`${currentBaseUrl()}/chat/send`, {method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify(payload)});
+                        const j = await r.json();
+                        $("chatResp").textContent = `reply: ${j.text} voice_suggested=${j.voice_suggested} voice_ref=${j.voice_reference_id || 'default'}`;
+                        if (j.voice_suggested && j.text) say(j.text, 'mp3', j.voice_reference_id);
+                };
 
-		async function say(text, format) {
-			const r = await fetch(`${$("baseUrl").value}/voice/say`, {
-				method: 'POST', headers: {'content-type': 'application/json'},
-				body: JSON.stringify({text, format})
-			});
-			if (!r.ok || !r.body) {log('TTS failed', 'err'); return;}
-			const reader = r.body.getReader();
+                async function say(text, format, referenceId) {
+                        const payload = {text, format, user_id: currentUserId()};
+                        const rid = (referenceId ?? "").trim();
+                        if (rid) payload.reference_id = rid;
+                        const r = await fetch(`${currentBaseUrl()}/voice/say`, {
+                                method: 'POST', headers: {'content-type': 'application/json'},
+                                body: JSON.stringify(payload)
+                        });
+                        if (!r.ok || !r.body) {log('TTS failed', 'err'); return;}
+                        const reader = r.body.getReader();
 			const chunks = [];
 			while (true) {
 				const {value, done} = await reader.read();
@@ -298,7 +339,42 @@
 			audio.src = url; audio.play();
 		}
 
-		$("btnSay").onclick = () => say($("sayText").value, $("sayFormat").value || 'mp3');
+                $("btnSay").onclick = () => {
+                        const overrideValue = sayVoiceOverride ? sayVoiceOverride.value : '';
+                        say($("sayText").value, $("sayFormat").value || 'mp3', overrideValue || undefined);
+                };
+
+                async function refreshPrefs() {
+                        try {
+                                const r = await fetch(`${currentBaseUrl()}/prefs/${encodeURIComponent(currentUserId())}`);
+                                const j = await r.json();
+                                prefOut.textContent = JSON.stringify(j);
+                                if (r.ok) {
+                                        voiceInput.value = j.voice_reference_id || '';
+                                        syncVoiceSelectWithInput();
+                                }
+                        } catch (e) {
+                                prefOut.textContent = 'error loading prefs';
+                        }
+                }
+
+                async function updateVoicePrefs(body) {
+                        try {
+                                const r = await fetch(`${currentBaseUrl()}/prefs/${encodeURIComponent(currentUserId())}/voice`, {
+                                        method: 'POST',
+                                        headers: {'content-type': 'application/json'},
+                                        body: JSON.stringify(body),
+                                });
+                                const j = await r.json();
+                                prefOut.textContent = JSON.stringify(j);
+                                if (r.ok) {
+                                        voiceInput.value = j.voice_reference_id || '';
+                                        syncVoiceSelectWithInput();
+                                }
+                        } catch (e) {
+                                prefOut.textContent = 'error updating prefs';
+                        }
+                }
 
 		$("btnAsr").onclick = async () => {
 			const f = $("asrFile").files[0];
@@ -310,32 +386,67 @@
 			$("asrOut").textContent = JSON.stringify(j);
 		};
 
-		$("btnVoiceOn").onclick = async () => {
-			const r = await fetch(`${$("baseUrl").value}/prefs/${encodeURIComponent($("userId").value)}/voice`, {
-				method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify({enabled: true})
-			});
-			const j = await r.json();
-			$("prefOut").textContent = JSON.stringify(j);
-		};
-		$("btnVoiceOff").onclick = async () => {
-			const r = await fetch(`${$("baseUrl").value}/prefs/${encodeURIComponent($("userId").value)}/voice`, {
-				method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify({enabled: false})
-			});
-			const j = await r.json();
-			$("prefOut").textContent = JSON.stringify(j);
-		};
+                $("btnVoiceOn").onclick = () => updateVoicePrefs({enabled: true});
+                $("btnVoiceOff").onclick = () => updateVoicePrefs({enabled: false});
+                $("btnVoiceRefresh").onclick = () => refreshPrefs();
+                $("btnVoiceApply").onclick = () => {
+                        const value = voiceInput ? voiceInput.value : '';
+                        updateVoicePrefs({reference_id: value ? value : null});
+                };
+                $("btnVoiceList").onclick = async () => {
+                        if (!voicesOut || !voiceSelect) return;
+                        voicesOut.textContent = 'Loading...';
+                        try {
+                                const r = await fetch(`${currentBaseUrl()}/voice/models`);
+                                const j = await r.json();
+                                while (voiceSelect.firstChild) voiceSelect.removeChild(voiceSelect.firstChild);
+                                const defaultOpt = document.createElement('option');
+                                defaultOpt.value = '';
+                                defaultOpt.textContent = 'Default (personality/system)';
+                                voiceSelect.appendChild(defaultOpt);
+                                if (!r.ok) {
+                                        voicesOut.textContent = `error: ${j.error || 'unknown'}`;
+                                        syncVoiceSelectWithInput();
+                                        return;
+                                }
+                                if (j.items && j.items.length) {
+                                        j.items.forEach((item) => {
+                                                const opt = document.createElement('option');
+                                                opt.value = item.id;
+                                                opt.textContent = `${item.id} — ${item.title}`;
+                                                voiceSelect.appendChild(opt);
+                                        });
+                                        voicesOut.textContent = `Loaded ${j.items.length} voices.`;
+                                } else {
+                                        voicesOut.textContent = 'No voices returned.';
+                                }
+                                syncVoiceSelectWithInput();
+                        } catch (e) {
+                                voicesOut.textContent = 'error loading voices';
+                        }
+                };
+
+                voiceSelect?.addEventListener('change', () => {
+                        const value = voiceSelect.value;
+                        voiceInput.value = value;
+                });
+                voiceInput?.addEventListener('input', () => {
+                        syncVoiceSelectWithInput();
+                });
 
 		$("btnStartPom").onclick = async () => {
 			const payload = {user_id: $("userId").value, focus_min: +$("focusMin").value, break_min: +$("breakMin").value, cycles: +$("cycles").value};
 			const r = await fetch(`${$("baseUrl").value}/pomodoro/start`, {method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify(payload)});
 			log(`pomodoro/start ${r.ok ? 'ok' : 'err'}`);
 		};
-		$("btnStopPom").onclick = async () => {
-			const payload = {user_id: $("userId").value};
-			const r = await fetch(`${$("baseUrl").value}/pomodoro/stop`, {method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify(payload)});
-			log(`pomodoro/stop ${r.ok ? 'ok' : 'err'}`);
-		};
-	</script>
+                $("btnStopPom").onclick = async () => {
+                        const payload = {user_id: $("userId").value};
+                        const r = await fetch(`${$("baseUrl").value}/pomodoro/stop`, {method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify(payload)});
+                        log(`pomodoro/stop ${r.ok ? 'ok' : 'err'}`);
+                };
+
+                refreshPrefs();
+        </script>
 </body>
 
 </html>
