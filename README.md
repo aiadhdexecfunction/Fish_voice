@@ -9,7 +9,13 @@ pip install -r requirements.txt
 cp .env.example .env  # 填入 FISH_API_KEY / LETTA_API_KEY（每个账号会自动创建自己的 Letta Agent）
 
 ## run
+
+### Backend
+```bash
 uvicorn app:app --reload --port 8001
+```
+
+The backend API will be available at http://localhost:8001
 
 ## test
 - 打开前端示例（见 README 最下方）或用你自己的前端
@@ -26,6 +32,23 @@ uvicorn app:app --reload --port 8001
 - 查询账号：GET /accounts/{username}
 
 如需自定义数据库位置，可设置环境变量 `ACCOUNTS_DB_PATH`。
+
+## frontend
+
+### Setup
+```bash
+cd frontend
+npm install
+```
+
+### Run
+```bash
+npm run dev
+```
+
+The frontend will be available at http://localhost:3000
+
+**Note:** Make sure to run the backend server first (from the project root), then start the frontend in a separate terminal.
 
 ## front example
 ```html

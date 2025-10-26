@@ -22,6 +22,8 @@
             pkgs.zlib
             pkgs.sqlite
             pkgs.gcc
+            pkgs.nodejs_22
+            pkgs.nodePackages.npm
           ];
 
           shellHook = ''
@@ -42,7 +44,9 @@
               fi
             fi
 
-            echo "venv active. Run: uvicorn app:app --reload"
+            echo "venv active."
+            echo "Backend: uvicorn app:app --reload"
+            echo "Frontend: cd frontend && npm run dev"
           '';
         };
       });
