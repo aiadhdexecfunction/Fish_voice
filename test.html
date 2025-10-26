@@ -165,6 +165,27 @@
     <div id="log"></div>
   </fieldset>
 
+  <!-- Chat History -->
+  <fieldset>
+    <legend>Chat History</legend>
+    <div class="row">
+      <div>
+        <label>Limit</label>
+        <input id="chatHistoryLimit" type="number" value="20" min="1" max="100" />
+      </div>
+      <div>
+        <label>Order</label>
+        <select id="chatHistoryOrder">
+          <option value="desc">Newest First</option>
+          <option value="asc">Oldest First</option>
+        </select>
+      </div>
+    </div>
+    <button id="btnChatHistory">Refresh History</button>
+    <div class="muted" id="chatHistoryOut"></div>
+    <div id="chatHistoryMessages" style="max-height: 300px; overflow-y: auto; border: 1px solid #ddd; padding: 8px; margin-top: 8px; background: #f9f9f9;"></div>
+  </fieldset>
+
   <!-- Chat -->
   <fieldset>
     <legend>Chat</legend>
@@ -403,6 +424,9 @@
         updateCurrentUser();
         $("authOut").textContent = `Logged in as ${username}`;
         log(`Logged in: ${username}`, "ok");
+        
+        // Auto-load chat history on login
+        await loadChatHistory();
       } catch (e) {
         $("authOut").textContent = "Login failed";
         log("Login error", "err");
@@ -414,6 +438,10 @@
       updateCurrentUser();
       $("authOut").textContent = "Logged out";
       log("Logged out", "ok");
+      
+      // Clear chat history on logout
+      $("chatHistoryOut").textContent = "";
+      $("chatHistoryMessages").innerHTML = "";
     };
 
     $("btnUpdateVoice").onclick = async () => {
@@ -541,7 +569,65 @@
       const j = await r.json();
       $("chatResp").textContent = `reply: ${j.text} voice_suggested=${j.voice_suggested}`;
       if (j.voice_suggested && j.text) say(j.text, 'mp3');
+      
+      // Refresh chat history after sending message
+      await loadChatHistory();
     };
+
+    // ---- Chat History ----
+    async function loadChatHistory() {
+      if (!currentAccount) {
+        $("chatHistoryOut").textContent = "Please log in first";
+        return;
+      }
+      
+      const userId = $("userId").value;
+      const limit = parseInt($("chatHistoryLimit").value) || 20;
+      const order = $("chatHistoryOrder").value;
+      
+      $("chatHistoryOut").textContent = "Loading chat history...";
+      $("chatHistoryMessages").innerHTML = "";
+      
+      try {
+        const url = `${$("baseUrl").value}/chat/history/${encodeURIComponent(userId)}?limit=${limit}&order=${order}`;
+        const r = await fetch(url);
+        const j = await r.json();
+        
+        if (!r.ok) {
+          $("chatHistoryOut").textContent = `Error: ${j.detail || j.error || "Failed to fetch history"}`;
+          return;
+        }
+        
+        $("chatHistoryOut").textContent = `Found ${j.count || 0} messages (Agent: ${j.agent_id || 'N/A'})`;
+        
+        if (j.messages && j.messages.length > 0) {
+          const messagesHtml = j.messages.map(msg => {
+            const timestamp = msg.timestamp ? new Date(msg.timestamp).toLocaleString() : 'Unknown time';
+            const roleClass = msg.role === 'user' ? 'user-msg' : 'assistant-msg';
+            const roleIcon = msg.role === 'user' ? '👤' : '🤖';
+            
+            return `
+              <div class="message-item" style="margin-bottom: 8px; padding: 6px; border-left: 3px solid ${msg.role === 'user' ? '#007bff' : '#28a745'}; background: white;">
+                <div style="font-size: 0.8em; color: #666; margin-bottom: 4px;">
+                  ${roleIcon} ${msg.role} • ${timestamp}
+                </div>
+                <div style="white-space: pre-wrap;">${msg.content || '(empty message)'}</div>
+              </div>
+            `;
+          }).join('');
+          
+          $("chatHistoryMessages").innerHTML = messagesHtml;
+        } else {
+          $("chatHistoryMessages").innerHTML = '<div style="text-align: center; color: #666; padding: 20px;">No messages found</div>';
+        }
+        
+      } catch (e) {
+        $("chatHistoryOut").textContent = `Failed to fetch chat history: ${e.message}`;
+        console.error('Chat history error:', e);
+      }
+    }
+
+    $("btnChatHistory").onclick = loadChatHistory;
 
     // ---- Voice (TTS/ASR) ----
     function selectedVoiceId() {
