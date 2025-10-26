@@ -6,7 +6,7 @@ pip install -r requirements.txt
 # Python >= 3.10 可选：
 # pip install fish-audio-sdk
 
-cp .env.example .env  # 填入 FISH_API_KEY / LETTA_API_KEY / LETTA_AGENT_ID(可选)
+cp .env.example .env  # 填入 FISH_API_KEY / LETTA_API_KEY（每个账号会自动创建自己的 Letta Agent）
 
 ## run
 uvicorn app:app --reload --port 8001
@@ -17,6 +17,15 @@ uvicorn app:app --reload --port 8001
 - chat：POST /chat/send {"user_id":"u_1", "text":"你好，帮我规划接下来25分钟"}
 - 无回复超时（例如把 FOLLOWUP_DELAY_SEC 设为 30），将收到 msg.followup 的关怀消息
 - 番茄钟：POST /pomodoro/start {"user_id":"u_1","focus_min":1,"break_min":1,"cycles":1}
+
+## accounts
+- 注册：POST /accounts/register {"username":"alice","password":"secret","voice_model":"voice_ref_id"}
+  - 会自动为账号创建 Letta Agent（模型：o4-mini），并把 voice_model 偏好保存在 SQLite（默认 `accounts.db`）。
+- 登录：POST /accounts/login {"username":"alice","password":"secret"}
+- 更新偏好语音：POST /accounts/{username}/voice-model {"voice_model":"voice_ref_id"}
+- 查询账号：GET /accounts/{username}
+
+如需自定义数据库位置，可设置环境变量 `ACCOUNTS_DB_PATH`。
 
 ## front example
 ```html

@@ -3,6 +3,7 @@ uvicorn[standard]
 requests
 pydantic
 pydantic-settings
+python-dotenv
 python-multipart
 letta_client
 fish-audio-sdk

@@ -20,6 +20,7 @@
             pkgs.pkg-config
             pkgs.openssl
             pkgs.zlib
+            pkgs.sqlite
             pkgs.gcc
           ];
 

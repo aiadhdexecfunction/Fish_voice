@@ -24,24 +24,47 @@
 <h1>BodyDouble test client</h1>
 <p class="muted">Use with your FastAPI server. First start: <code>uvicorn app:app --reload --port 8001</code></p>
 
-<!-- Config -->
-<fieldset>
-  <legend>Config</legend>
-  <div class="row">
-    <div>
-      <label>API base URL</label>
-      <input id="baseUrl" type="text" value="http://localhost:8001"/>
-    </div>
-    <div>
-      <label>User ID (any unique string or UUID)</label>
-      <input id="userId" type="text" value="550e8400-e29b-41d4-a716-446655440000"/>
-    </div>
-  </div>
-  <div>
-    <button id="btnHealth">/healthz</button>
-    <span id="healthOut" class="muted"></span>
-  </div>
-</fieldset>
+	<fieldset>
+		<legend>Account Management</legend>
+		<div class="row">
+			<div>
+				<label>Username</label>
+				<input id="username" type="text" placeholder="Enter username" />
+				<label>Password</label>
+				<input id="password" type="password" placeholder="Enter password" />
+				<button id="btnRegister">Register</button>
+				<button id="btnLogin">Login</button>
+				<div class="muted" id="authOut"></div>
+			</div>
+			<div>
+				<label>Current User</label>
+				<div id="currentUser" class="muted">Not logged in</div>
+				<button id="btnLogout">Logout</button>
+				<label>Voice Model</label>
+				<input id="voiceModel" type="text" placeholder="Voice model ID" />
+				<button id="btnUpdateVoice">Update Voice Model</button>
+				<div class="muted" id="voiceUpdateOut"></div>
+			</div>
+		</div>
+	</fieldset>
+
+	<fieldset>
+		<legend>Config</legend>
+		<div class="row">
+			<div>
+				<label>API base URL</label>
+				<input id="baseUrl" type="text" value="http://localhost:8000" />
+			</div>
+			<div>
+				<label>User ID (auto-filled when logged in)</label>
+				<input id="userId" type="text" value="" readonly />
+			</div>
+		</div>
+		<div>
+			<button id="btnHealth">Health</button>
+			<span id="healthOut" class="muted"></span>
+		</div>
+	</fieldset>
 
 <!-- Personality -->
 <fieldset>
@@ -169,30 +192,145 @@
   const api = () => $("baseUrl").value.replace(/\/$/, "");
   const uid = () => $("userId").value.trim();
 
-  // ---- WebSocket ----
   let ws;
-  function wsUrl() { return `${api()}/ws/events/${encodeURIComponent(uid())}`.replace(/^http/, "ws"); }
+  let currentAccount = null;
+		
+  function wsUrl() {return `${$("baseUrl").value.replace(/\/$/, "")}/ws/events/${encodeURIComponent($("userId").value)}`;}
+		
+  function updateCurrentUser() {
+    const userEl = $("currentUser");
+    const userIdEl = $("userId");
+    if (currentAccount) {
+      userEl.textContent = currentAccount.username;
+      userIdEl.value = currentAccount.username;
+      $("voiceModel").value = currentAccount.voice_model || "";
+    } else {
+      userEl.textContent = "Not logged in";
+      userIdEl.value = "";
+      $("voiceModel").value = "";
+    }
+  }
+		
+  // Account management functions
+  $("btnRegister").onclick = async () => {
+    const username = $("username").value.trim();
+    const password = $("password").value;
+    if (!username || !password) {
+      $("authOut").textContent = "Please enter username and password";
+      return;
+    }
+    $("authOut").textContent = "Registering...";
+    try {
+      const r = await fetch(`${$("baseUrl").value}/accounts/register`, {
+        method: 'POST',
+        headers: {'content-type': 'application/json'},
+        body: JSON.stringify({username, password})
+      });
+      const j = await r.json();
+      if (!r.ok) {
+        $("authOut").textContent = `Error: ${j.error || 'Registration failed'}`;
+        return;
+      }
+      currentAccount = j;
+      updateCurrentUser();
+      $("authOut").textContent = `Registered successfully!`;
+      log(`Account registered: ${username}`, "ok");
+    } catch (e) {
+      $("authOut").textContent = "Registration failed";
+      log("Registration error", "err");
+    }
+  };
+		
+  $("btnLogin").onclick = async () => {
+    const username = $("username").value.trim();
+    const password = $("password").value;
+    if (!username || !password) {
+      $("authOut").textContent = "Please enter username and password";
+      return;
+    }
+    $("authOut").textContent = "Logging in...";
+    try {
+      const r = await fetch(`${$("baseUrl").value}/accounts/login`, {
+        method: 'POST',
+        headers: {'content-type': 'application/json'},
+        body: JSON.stringify({username, password})
+      });
+      const j = await r.json();
+      if (!r.ok) {
+        $("authOut").textContent = `Error: ${j.error || 'Login failed'}`;
+        return;
+      }
+      currentAccount = j;
+      updateCurrentUser();
+      $("authOut").textContent = `Logged in as ${username}`;
+      log(`Logged in: ${username}`, "ok");
+    } catch (e) {
+      $("authOut").textContent = "Login failed";
+      log("Login error", "err");
+    }
+  };
+		
+  $("btnLogout").onclick = () => {
+    currentAccount = null;
+    updateCurrentUser();
+    $("authOut").textContent = "Logged out";
+    log("Logged out", "ok");
+  };
+		
+  $("btnUpdateVoice").onclick = async () => {
+    if (!currentAccount) {
+      $("voiceUpdateOut").textContent = "Please log in first";
+      return;
+    }
+    const voiceModel = $("voiceModel").value.trim();
+    if (!voiceModel) {
+      $("voiceUpdateOut").textContent = "Please enter a voice model ID";
+      return;
+    }
+    $("voiceUpdateOut").textContent = "Updating...";
+    try {
+      const r = await fetch(`${$("baseUrl").value}/accounts/${encodeURIComponent(currentAccount.username)}/voice-model`, {
+        method: 'POST',
+        headers: {'content-type': 'application/json'},
+        body: JSON.stringify({voice_model: voiceModel})
+      });
+      const j = await r.json();
+      if (!r.ok) {
+        $("voiceUpdateOut").textContent = `Error: ${j.error || 'Update failed'}`;
+        return;
+      }
+      currentAccount.voice_model = voiceModel;
+      updateCurrentUser();
+      $("voiceUpdateOut").textContent = `Voice model updated to ${voiceModel}`;
+      log(`Voice model updated: ${voiceModel}`, "ok");
+    } catch (e) {
+      $("voiceUpdateOut").textContent = "Update failed";
+      log("Voice model update error", "err");
+    }
+  };
 
   $("btnWsConnect").onclick = () => {
+    if (!currentAccount) {
+      log("Please log in first to connect WebSocket", "err");
+      return;
+    }
     if (ws && ws.readyState === WebSocket.OPEN) return;
-    ws = new WebSocket(wsUrl());
-    ws.onopen = () => { $("wsState").textContent = "connected"; log("WS open", "ok"); };
-    ws.onclose = () => { $("wsState").textContent = "disconnected"; log("WS closed"); };
-    ws.onerror = () => { log("WS error", "err"); };
+    ws = new WebSocket(wsUrl().replace(/^http/, 'ws'));
+    ws.onopen = () => {$("wsState").textContent = "connected"; log("WS open", "ok");};
+    ws.onclose = () => {$("wsState").textContent = "disconnected"; log("WS closed");};
+    ws.onerror = (e) => {log("WS error", "err");};
     ws.onmessage = (ev) => {
       try {
         const data = JSON.parse(ev.data);
-        const evType = data.event || "(none)";
-        log(`event: ${evType} type=${data.type} text=${data.text || ""}`);
-        if (data.type === "speak" && data.text) {
-          say(data.text, "mp3");
+        log(`event: ${data.event} type=${data.type} text=${data.text || ""}`);
+        if (data.type === 'speak' && data.text) {
+          // auto request TTS for the text
+          say(data.text, 'mp3');
         }
-      } catch {
-        log("non-JSON message");
-      }
+      } catch {log("non-JSON message");}
     };
   };
-  $("btnWsDisconnect").onclick = () => { if (ws) ws.close(); };
+  $("btnWsDisconnect").onclick = () => {if (ws) ws.close();};
 
   // ---- Health ----
   $("btnHealth").onclick = async () => {
@@ -226,6 +364,10 @@
   };
 
   $("btnSetPersonality").onclick = async () => {
+    if (!currentAccount) {
+      $("personalitySetOut").textContent = 'Please log in first';
+      return;
+    }
     const personalityId = $("personalityId").value.trim();
     if (!personalityId) {
       $("personalitySetOut").textContent = 'enter an id';
@@ -233,7 +375,7 @@
     }
     $("personalitySetOut").textContent = 'Saving...';
     try {
-      const r = await fetch(`${api()}/prefs/${encodeURIComponent(uid())}/personality`, {
+      const r = await fetch(`${$("baseUrl").value}/prefs/${encodeURIComponent($("userId").value)}/personality`, {
         method: 'POST',
         headers: {'content-type': 'application/json'},
         body: JSON.stringify({personality_id: personalityId}),
@@ -251,11 +393,15 @@
 
   // ---- Chat ----
   $("btnChatSend").onclick = async () => {
-    const payload = { user_id: uid(), text: $("chatText").value };
-    const r = await fetch(`${api()}/chat/send`, { method: "POST", headers: {"content-type":"application/json"}, body: JSON.stringify(payload) });
+    if (!currentAccount) {
+      $("chatResp").textContent = "Please log in first";
+      return;
+    }
+    const payload = {user_id: $("userId").value, text: $("chatText").value};
+    const r = await fetch(`${$("baseUrl").value}/chat/send`, {method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify(payload)});
     const j = await r.json();
     $("chatResp").textContent = `reply: ${j.text} voice_suggested=${j.voice_suggested}`;
-    if (j.voice_suggested && j.text) say(j.text, "mp3");
+    if (j.voice_suggested && j.text) say(j.text, 'mp3');
   };
 
   // ---- Voice (TTS/ASR) ----
@@ -291,13 +437,22 @@
 
   // ---- Pomodoro ----
   $("btnStartPom").onclick = async () => {
-    const payload = { user_id: uid(), focus_min: +$("focusMin").value, break_min: +$("breakMin").value, cycles: +$("cycles").value };
-    const r = await fetch(`${api()}/pomodoro/start`, { method: "POST", headers: {"content-type":"application/json"}, body: JSON.stringify(payload) });
-    log(`pomodoro/start ${r.ok ? "ok" : "err"}`);
+    if (!currentAccount) {
+      log("Please log in first to start Pomodoro", "err");
+      return;
+    }
+    const payload = {user_id: $("userId").value, focus_min: +$("focusMin").value, break_min: +$("breakMin").value, cycles: +$("cycles").value};
+    const r = await fetch(`${$("baseUrl").value}/pomodoro/start`, {method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify(payload)});
+    log(`pomodoro/start ${r.ok ? 'ok' : 'err'}`);
   };
   $("btnStopPom").onclick = async () => {
-    const r = await fetch(`${api()}/pomodoro/stop`, { method: "POST", headers: {"content-type":"application/json"}, body: JSON.stringify({ user_id: uid() }) });
-    log(`pomodoro/stop ${r.ok ? "ok" : "err"}`);
+    if (!currentAccount) {
+      log("Please log in first to stop Pomodoro", "err");
+      return;
+    }
+    const payload = {user_id: $("userId").value};
+    const r = await fetch(`${$("baseUrl").value}/pomodoro/stop`, {method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify(payload)});
+    log(`pomodoro/stop ${r.ok ? 'ok' : 'err'}`);
   };
 
   // ---- Voice Management ----
@@ -341,29 +496,26 @@
   };
 
   $("btnVoiceOn").onclick = async () => {
-    const r = await fetch(`${api()}/prefs/${encodeURIComponent(uid())}/voice`, {
+    if (!currentAccount) {
+      $("prefOut").textContent = 'Please log in first';
+      return;
+    }
+    const r = await fetch(`${$("baseUrl").value}/prefs/${encodeURIComponent($("userId").value)}/voice`, {
       method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify({enabled: true})
     });
     const j = await r.json();
     $("prefOut").textContent = JSON.stringify(j);
   };
   $("btnVoiceOff").onclick = async () => {
-    const r = await fetch(`${api()}/prefs/${encodeURIComponent(uid())}/voice`, {
+    if (!currentAccount) {
+      $("prefOut").textContent = 'Please log in first';
+      return;
+    }
+    const r = await fetch(`${$("baseUrl").value}/prefs/${encodeURIComponent($("userId").value)}/voice`, {
       method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify({enabled: false})
     });
     const j = await r.json();
     $("prefOut").textContent = JSON.stringify(j);
-  };
-
-  // ---- Pomodoro ----
-  $("btnStartPom").onclick = async () => {
-    const payload = { user_id: uid(), focus_min: +$("focusMin").value, break_min: +$("breakMin").value, cycles: +$("cycles").value };
-    const r = await fetch(`${api()}/pomodoro/start`, { method: "POST", headers: {"content-type":"application/json"}, body: JSON.stringify(payload) });
-    log(`pomodoro/start ${r.ok ? "ok" : "err"}`);
-  };
-  $("btnStopPom").onclick = async () => {
-    const r = await fetch(`${api()}/pomodoro/stop`, { method: "POST", headers: {"content-type":"application/json"}, body: JSON.stringify({ user_id: uid() }) });
-    log(`pomodoro/stop ${r.ok ? "ok" : "err"}`);
   };
 
   // ---- Composio: health ----
