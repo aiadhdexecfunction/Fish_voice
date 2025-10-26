@@ -627,7 +627,7 @@ async def ws_events(ws: WebSocket, user_id: str):
 
 # ===================== User preferences (Voice toggle) =====================
 class UserPrefs(BaseModel):
-    voice_enabled: bool = True
+    voice_enabled: bool = False
     personality_id: str = DEFAULT_PERSONALITY_ID
 
 user_prefs: Dict[str, UserPrefs] = {}
