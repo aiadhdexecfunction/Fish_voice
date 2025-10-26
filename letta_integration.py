@@ -25,9 +25,9 @@ def create_letta_agent(username: str) -> Optional[str]:
         print(f"[DEBUG] Attempting to create Letta agent for {username} using ADHD_Agent template")
         # Try creating agent with ADHD_Agent template
         try:
-            agent = letta.agents.create_from_template(
-                template_id="ADHD_Agent",
-                name=f"{username}-agent"
+            agent = letta.templates.agents.create(
+                project="default-project",
+                template_version="ADHD_Agent:latest",
             )
             print(f"[DEBUG] Successfully created agent using ADHD_Agent template")
         except Exception as e:
