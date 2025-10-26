@@ -26,6 +26,7 @@ export const API_ENDPOINTS = {
     get: (userId: string) => `${API_BASE_URL}/prefs/${userId}`,
     setVoice: (userId: string) => `${API_BASE_URL}/prefs/${userId}/voice`,
     setPersonality: (userId: string) => `${API_BASE_URL}/prefs/${userId}/personality`,
+    setVoiceModel: (userId: string) => `${API_BASE_URL}/prefs/${userId}/voice-model`,
   },
   
   // Chat
@@ -43,6 +44,7 @@ export const API_ENDPOINTS = {
   voice: {
     say: `${API_BASE_URL}/voice/say`,
     asr: `${API_BASE_URL}/voice/asr`,
+    models: `${API_BASE_URL}/voice/models`,
   },
   
   // WebSocket

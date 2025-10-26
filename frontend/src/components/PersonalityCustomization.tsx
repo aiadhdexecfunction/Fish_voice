@@ -5,12 +5,14 @@ import { X, Sparkles, Heart, Flame, Zap } from 'lucide-react';
 import { RadioGroup, RadioGroupItem } from './ui/radio-group';
 import { useAuth } from '../contexts/AuthContext';
 import { toast } from './ui/sonner';
+import { getVoiceModelId, VoiceTone } from '../utils/voiceMapping';
+import API_ENDPOINTS from '../config/api';
 
 interface PersonalityCustomizationProps {
   personality: string;
   setPersonality: (value: string) => void;
-  voiceTone: string;
-  setVoiceTone: (value: string) => void;
+  voiceTone: VoiceTone;
+  setVoiceTone: (value: VoiceTone) => void;
   onClose: () => void;
 }
 
@@ -30,22 +32,33 @@ export default function PersonalityCustomization({
     }
 
     try {
-      const response = await fetch(`http://localhost:8000/prefs/${user.username}/personality`, {
+      // Save personality preference
+      const personalityResponse = await fetch(API_ENDPOINTS.preferences.setPersonality(user.username), {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ personality_id: personality }),
       });
 
-      if (response.ok) {
-        toast.success('Personality saved successfully! 🎭');
+      // Save voice model preference
+      const voiceModelId = getVoiceModelId(voiceTone);
+      const voiceResponse = await fetch(API_ENDPOINTS.preferences.setVoiceModel(user.username), {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ voice_model: voiceModelId }),
+      });
+
+      if (personalityResponse.ok && voiceResponse.ok) {
+        toast.success('Preferences saved successfully! 🎭');
         onClose();
       } else {
-        const error = await response.json();
-        toast.error(`Failed to save: ${error.error || 'Unknown error'}`);
+        const personalityError = personalityResponse.ok ? null : await personalityResponse.json();
+        const voiceError = voiceResponse.ok ? null : await voiceResponse.json();
+        const errorMessage = personalityError?.error || voiceError?.error || 'Unknown error';
+        toast.error(`Failed to save: ${errorMessage}`);
       }
     } catch (error) {
-      console.error('Failed to save personality:', error);
-      toast.error('Failed to save personality');
+      console.error('Failed to save preferences:', error);
+      toast.error('Failed to save preferences');
     }
   };
 

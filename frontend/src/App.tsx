@@ -1,5 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { fetchTasks, createTask, updateTask as updateTaskApi, deleteTask as deleteTaskApi } from './utils/tasksApi';
+import { getVoiceToneFromModelId, VoiceTone } from './utils/voiceMapping';
 import { DndProvider } from 'react-dnd';
 import { HTML5Backend } from 'react-dnd-html5-backend';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './components/ui/tabs';
@@ -112,19 +113,12 @@ function App() {
   });
   const [showPersonalityCustomization, setShowPersonalityCustomization] = useState(false);
   const [personality, setPersonality] = useState<'gentle' | 'funny' | 'pushy'>('gentle');
-  const [voiceTone, setVoiceTone] = useState<'ariana' | 'gordon' | 'snoop'>('ariana');
+  const [voiceTone, setVoiceTone] = useState<VoiceTone>('ariana');
   
   const userName = user?.username || 'Guest';
   const [tasksLoading, setTasksLoading] = useState(false);
 
-  // Load preferences from backend when authenticated
-  useEffect(() => {
-    if (isAuthenticated && user?.username) {
-      loadPreferences();
-    }
-  }, [isAuthenticated, user?.username]);
-
-  const loadPreferences = async () => {
+  const loadPreferences = useCallback(async () => {
     if (!user?.username) return;
     
     try {
@@ -134,27 +128,46 @@ function App() {
         if (data.personality?.id) {
           setPersonality(data.personality.id as 'gentle' | 'funny' | 'pushy');
         }
+        if (data.voice_model) {
+          const voiceToneFromModel = getVoiceToneFromModelId(data.voice_model);
+          if (voiceToneFromModel) {
+            setVoiceTone(voiceToneFromModel);
+          }
+        }
       }
     } catch (error) {
       console.error('Failed to load preferences:', error);
     }
-  };
+  }, [user?.username]);
 
-  const loadTasks = async () => {
+  const loadTasks = useCallback(async () => {
+    if (!user?.username) return;
+    
     setTasksLoading(true);
     try {
       const fetchedTasks = await fetchTasks();
-      if (fetchedTasks.length > 0) {
+      console.log('Fetched tasks:', fetchedTasks);
+      if (fetchedTasks && fetchedTasks.length > 0) {
         setTasks(fetchedTasks);
+      } else {
+        console.log('No tasks found from API, using empty array');
+        setTasks([]);
       }
-      // If no tasks from backend, keep the mock data
     } catch (error) {
       console.error('Failed to load tasks:', error);
       // Keep using local mock data if fetch fails
     } finally {
       setTasksLoading(false);
     }
-  };
+  }, [user?.username]);
+
+  // Load preferences from backend when authenticated
+  useEffect(() => {
+    if (isAuthenticated && user?.username) {
+      loadPreferences();
+      loadTasks();
+    }
+  }, [isAuthenticated, user?.username, loadPreferences, loadTasks]);
 
   // Get time-based greeting
   const getGreeting = () => {

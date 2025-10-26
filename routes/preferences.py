@@ -1,9 +1,9 @@
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 
-from models import VoiceToggleIn, PersonalitySetIn, UserPrefs
+from models import VoiceToggleIn, PersonalitySetIn, UserPrefs, VoiceModelUpdateIn
 from personalities import get_personality, PERSONALITIES, DEFAULT_PERSONALITY_ID
-from database import get_account
+from database import get_account, update_account_voice_model
 from shared_state import user_prefs
 
 router = APIRouter(prefix="/prefs", tags=["preferences"])
@@ -68,3 +68,20 @@ def set_personality_pref(user_id: str, payload: PersonalitySetIn):
             "description": personality.description,
         },
     }
+
+
+@router.post("/{user_id}/voice-model")
+def set_voice_model_pref(user_id: str, payload: VoiceModelUpdateIn):
+    """Set the voice model preference for a user"""
+    try:
+        update_account_voice_model(user_id, payload.voice_model)
+        return {
+            "ok": True,
+            "user_id": user_id,
+            "voice_model": payload.voice_model,
+        }
+    except Exception as e:
+        return JSONResponse(
+            {"error": "failed_to_update_voice_model", "detail": str(e)},
+            status_code=500,
+        )
