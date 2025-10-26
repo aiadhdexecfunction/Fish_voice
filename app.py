@@ -154,35 +154,85 @@ def fish_tts_stream(
     """Yield an audio byte stream for TTS."""
     if FISH_MODE == "sdk":
         # SDK mode
-        session = Session(settings.FISH_API_KEY)
-        req = TTSRequest(
-            text=text,
-            reference_id=reference_id or settings.FISH_VOICE_REFERENCE_ID,
-            format=fmt,
-            prosody=Prosody(speed=speed, volume=volume),
-            latency=latency,
-            temperature=temperature,
-            top_p=top_p,
-        )
-        gen = session.tts(req)
-        for chunk in gen:
-            yield chunk
-    else:
-        # REST mode
+        try:
+            session = Session(settings.FISH_API_KEY)
+            
+            # Validate and clean parameters
+            clean_reference_id = reference_id or settings.FISH_VOICE_REFERENCE_ID
+            if not clean_reference_id:
+                clean_reference_id = None  # Don't pass None explicitly
+            
+            # Validate format
+            if fmt not in ["mp3", "wav"]:
+                fmt = "mp3"
+            
+            # Validate latency
+            if latency not in ["balanced", "low", "high"]:
+                latency = "balanced"
+            
+            # Validate numeric parameters
+            speed = max(0.1, min(3.0, speed))  # Clamp between 0.1 and 3.0
+            volume = max(-100, min(100, volume))  # Clamp between -100 and 100
+            temperature = max(0.0, min(1.0, temperature))  # Clamp between 0.0 and 1.0
+            top_p = max(0.0, min(1.0, top_p))  # Clamp between 0.0 and 1.0
+            
+            # Build request parameters
+            req_params = {
+                "text": text,
+                "format": fmt,
+                "prosody": Prosody(speed=speed, volume=volume),
+                "latency": latency,
+                "temperature": temperature,
+                "top_p": top_p,
+            }
+            
+            # Only add reference_id if it's not None
+            if clean_reference_id:
+                req_params["reference_id"] = clean_reference_id
+            
+            req = TTSRequest(**req_params)
+            gen = session.tts(req)
+            for chunk in gen:
+                yield chunk
+                
+        except Exception as e:
+            print(f"[Fish TTS SDK Error] {e}")
+            # Fallback to REST mode on SDK error
+            pass
+    
+    # REST mode (either as fallback or primary)
+    try:
         url = "https://api.fish.audio/v1/tts"
         headers = {
             "Authorization": f"Bearer {settings.FISH_API_KEY}",
             "Content-Type": "application/json",
+        }
+        
+        # Validate format
+        if fmt not in ["mp3", "wav"]:
+            fmt = "mp3"
+        
+        payload = {
+            "text": text, 
+            "format": fmt,
             "model": settings.FISH_MODEL,
         }
-        payload = {"text": text, "format": fmt}
-        if reference_id or settings.FISH_VOICE_REFERENCE_ID:
-            payload["reference_id"] = reference_id or settings.FISH_VOICE_REFERENCE_ID
+        
+        # Only add reference_id if it exists
+        final_reference_id = reference_id or settings.FISH_VOICE_REFERENCE_ID
+        if final_reference_id:
+            payload["reference_id"] = final_reference_id
+        
         with requests.post(url, headers=headers, json=payload, stream=True, timeout=120) as r:
             r.raise_for_status()
             for chunk in r.iter_content(65536):
                 if chunk:
                     yield chunk
+                    
+    except Exception as e:
+        print(f"[Fish TTS REST Error] {e}")
+        # Return empty bytes as last resort
+        yield b""
 
 def fish_asr(audio_bytes: bytes, language: str = "en"):
     """Return ASR result (text, duration) using SDK or REST."""
@@ -245,23 +295,32 @@ class SayIn(BaseModel):
 
 @app.post("/voice/say", summary="Text-to-speech (streams mp3/wav)")
 def voice_say(payload: SayIn):
-    reference_id = payload.reference_id
-    if not reference_id and payload.user_id:
-        prefs = user_prefs.get(payload.user_id, UserPrefs())
-        personality = get_personality(prefs.personality_id)
-        reference_id = personality.voice_reference_id
-    gen = fish_tts_stream(
-        text=payload.text,
-        fmt=payload.format or "mp3",
-        reference_id=reference_id,
-        speed=payload.speed or 1.0,
-        volume=payload.volume or 0,
-        latency=payload.latency or "balanced",
-        temperature=payload.temperature or 0.7,
-        top_p=payload.top_p or 0.7,
-    )
-    media_type = "audio/mpeg" if (payload.format or "mp3") == "mp3" else "audio/wav"
-    return StreamingResponse(gen, media_type=media_type)
+    try:
+        reference_id = payload.reference_id
+        if not reference_id and payload.user_id:
+            prefs = user_prefs.get(payload.user_id, UserPrefs())
+            personality = get_personality(prefs.personality_id)
+            reference_id = personality.voice_reference_id
+        
+        gen = fish_tts_stream(
+            text=payload.text,
+            fmt=payload.format or "mp3",
+            reference_id=reference_id,
+            speed=payload.speed or 1.0,
+            volume=payload.volume or 0,
+            latency=payload.latency or "balanced",
+            temperature=payload.temperature or 0.7,
+            top_p=payload.top_p or 0.7,
+        )
+        media_type = "audio/mpeg" if (payload.format or "mp3") == "mp3" else "audio/wav"
+        return StreamingResponse(gen, media_type=media_type)
+    except Exception as e:
+        print(f"[Voice Say Error] {e}")
+        # Return a simple error response
+        return JSONResponse(
+            {"error": "TTS generation failed", "detail": str(e)}, 
+            status_code=500
+        )
 
 @app.post("/voice/asr", summary="Speech-to-text (upload audio)")
 async def voice_asr(file: UploadFile = File(...), language: str = "en"):

@@ -100,31 +100,6 @@
       <div class="muted" id="asrOut"></div>
     </div>
     <div>
-      <label class="muted">Tip</label>
-      <div class="muted">If a WS message has <code>type='speak'</code>, it will auto-play via <code>/voice/say</code>.</div>
-    </div>
-  </div>
-</fieldset>
-
-<!-- Voice -->
-<fieldset>
-  <legend>Voice</legend>
-  <div class="grid-3">
-    <div>
-      <label>Text</label>
-      <input id="sayText" type="text" value="Hello from BodyDouble"/>
-      <label>Format</label>
-      <input id="sayFormat" type="text" value="mp3"/>
-      <button id="btnSay">POST /voice/say</button>
-      <audio id="player" controls></audio>
-    </div>
-    <div>
-      <label>ASR upload (.wav)</label>
-      <input id="asrFile" type="file" accept="audio/*"/>
-      <button id="btnAsr">POST /voice/asr</button>
-      <div class="muted" id="asrOut"></div>
-    </div>
-    <div>
       <label>Voice models</label>
       <button id="btnListVoices">/voice/models</button>
       <select id="voiceSelect">
