@@ -1,102 +1,34 @@
-# Body Double (Letta + Fish Audio) — Minimal
+## Inspiration
+We built ADHD BDBD because most of us on the team have ADHD, and we know firsthand how hard it can be to study alone. One effective strategy for staying engaged is called body doubling: having someone present while you work.
+So we thought… What if that ‘someone’ was a slice of pizza?
 
-> **Note:** For information on integrating the frontend with the backend API, see:
-> - `INTEGRATION_ANALYSIS.md` - Detailed analysis of functionality gaps
-> - `INTEGRATION_STATUS.md` - Current implementation status and next steps
+## What it does
+ADHD BDBD allows students to organize their day in a way that feels fun, structured, and supportive. Users can add their tasks manually, or import them directly from platforms like Gmail and Canvas. Each task can then be broken into subtasks, either manually or through AI-generated recommendations. Once those subtasks are prepared, students can choose the ones they want to focus on that day, which forms their ‘daily pizza’ study plan.
 
-## download
-python -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
-# Python >= 3.10 可选：
-# pip install fish-audio-sdk
+To help maintain focus, users are joined by a customizable pizza-slice body double who acts as a virtual study companion. They can personalize its personality and voice. Then users choose different virtual study environments such as a coffee shop, a library, or a park. A built-in Pomodoro timer helps guide focused work sessions, and at the end of each session, the body double prompts a brief reflection to help the student consolidate what they’ve learned.
 
-cp .env.example .env  # 填入 FISH_API_KEY / LETTA_API_KEY（每个账号会自动创建自己的 Letta Agent）
+In addition, the app includes a planning and overview page where students can evaluate tasks by urgency and importance, view upcoming deadlines, and track streaks to support habit building. 
 
-## run
+## How we built it
+After researching about study habits of ADHD students, we decided to make the website as accessible as possible by adding many different functions to improve  efficiency. We also fun and dynamic by incorporating our web development with engaging fonts and colors. 
 
-### Backend
-```bash
-uvicorn app:app --reload --port 8001
-```
+Our backend turns a simple chat UI into a voice-enabled, tool-using, ADHD-friendly companion. It powers:
+	•	Stateful AI chat (Letta) that can use tools (email/calendar/files/LMS/tasks) via MCP and composio
+	•	Shared To-Do list (DB-backed) that both the agent and the UI can add/edit/complete/delete in real time
+	•	Pomodoro coaching with gentle follow-ups and spoken prompts
+	•	Voice via Fish Voice (Fish Audio) for real-time TTS
+	•	OAuthed integrations (Gmail, Google Calendar, Canvas LMS, Google Drive, Google Tasks) through Composio
 
-The backend API will be available at http://localhost:8001
+## Challenges we ran into
+We faced technical challenges, especially with communications between frontend and backend. The integration part was the most difficult for us. We realized that we should have communicated better with clear and meaningful talks, not just yapping.
 
-## test
-- 打开前端示例（见 README 最下方）或用你自己的前端
-- Voice button：POST /prefs/{user_id}/voice {"enabled": true|false}
-- chat：POST /chat/send {"user_id":"u_1", "text":"你好，帮我规划接下来25分钟"}
-- 无回复超时（例如把 FOLLOWUP_DELAY_SEC 设为 30），将收到 msg.followup 的关怀消息
-- 番茄钟：POST /pomodoro/start {"user_id":"u_1","focus_min":1,"break_min":1,"cycles":1}
+## Accomplishments that we're proud of
+Making something that would actually benefit people with different neural systems and providing them an accessible app. 
 
-## accounts
-- 注册：POST /accounts/register {"username":"alice","password":"secret","voice_model":"voice_ref_id"}
-  - 会自动为账号创建 Letta Agent（模型：o4-mini），并把 voice_model 偏好保存在 SQLite（默认 `accounts.db`）。
-- 登录：POST /accounts/login {"username":"alice","password":"secret"}
-- 更新偏好语音：POST /accounts/{username}/voice-model {"voice_model":"voice_ref_id"}
-- 查询账号：GET /accounts/{username}
+## What we learned
+Throughout the development process, we learned that ADHD presents itself differently for everyone, and designing for flexibility and accessibility is essential. 
 
-如需自定义数据库位置，可设置环境变量 `ACCOUNTS_DB_PATH`。
-
-## frontend
-
-### Setup
-```bash
-cd frontend
-npm install
-```
-
-### Run
-```bash
-npm run dev
-```
-
-The frontend will be available at http://localhost:3000
-
-**Note:** Make sure to run the backend server first (from the project root), then start the frontend in a separate terminal.
-
-## front example
-```html
-<!doctype html>
-<meta charset="utf-8" />
-<label><input type="checkbox" id="voiceToggle"> Voice 开启</label>
-<div>
-  <input id="inp" placeholder="对助手说点什么..." />
-  <button id="send">发送</button>
-</div>
-<div id="chat"></div>
-<audio id="bb-voice" controls></audio>
-<script>
-const userId = "u_1";
-const audio = document.getElementById("bb-voice");
-const chat = document.getElementById("chat");
-const toggle = document.getElementById("voiceToggle");
-fetch(`/prefs/${userId}`).then(r=>r.json()).then(({voice_enabled})=>toggle.checked=!!voice_enabled);
-toggle.onchange = ()=>fetch(`/prefs/${userId}/voice`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({enabled:toggle.checked})});
-
-const ws = new WebSocket(`ws://${location.host}/ws/events/${userId}`);
-ws.onmessage = async (e)=>{
-  const msg = JSON.parse(e.data);
-  append(`[${msg.event}] ${msg.text}`);
-  if (toggle.checked && msg.type==="speak" && msg.text){
-    const res = await fetch("/voice/say",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({text:msg.text,latency:"balanced",format:"mp3"})});
-    const blob = await res.blob();
-    audio.src = URL.createObjectURL(blob);
-    audio.play();
-  }
-}
-document.getElementById("send").onclick = async ()=>{
-  const txt = document.getElementById("inp").value.trim();
-  if(!txt) return;
-  append(`你：${txt}`);
-  const r = await fetch("/chat/send",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({user_id:userId,text:txt})});
-  const data = await r.json();
-  append(`助手：${data.text}`);
-  if (toggle.checked && data.voice_suggested){
-    const res = await fetch("/voice/say",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({text:data.text,latency:"balanced",format:"mp3"})});
-    const blob = await res.blob();
-    audio.src = URL.createObjectURL(blob);
-    audio.play();
-  }
-}
-function append(s){ const p=document.createElement('p'); p.textContent=s; chat.appendChild(p); }
-</script>
+## What's next for ADHD BDBD (ADHD Body Double BuDdy)
+1. Partner with a professional, medical institute to conduct research on the effectiveness of the product. 
+2. Make a 3D customizable body double based on the users image input and description
+3. Include a web extension so that users can move on to other web pages without a loss of time
