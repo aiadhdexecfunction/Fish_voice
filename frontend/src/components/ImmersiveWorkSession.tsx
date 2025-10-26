@@ -11,6 +11,8 @@ import {
   getTimerCompleteMessage,
   getSessionFeedback,
 } from '../utils/messageGenerator';
+import { useAuth } from '../contexts/AuthContext';
+import { API_ENDPOINTS } from '../config/api';
 import { 
   Coffee, 
   Library, 
@@ -18,8 +20,6 @@ import {
   Home, 
   Volume2,
   VolumeX,
-  Mic,
-  MicOff,
   X,
   PartyPopper,
   Music,
@@ -177,21 +177,21 @@ export default function ImmersiveWorkSession({
   personality,
   voiceTone,
 }: ImmersiveWorkSessionProps) {
+  const { user } = useAuth();
   const [viewState, setViewState] = useState<ViewState>('room-selection');
   const [selectedRoom, setSelectedRoom] = useState<Room | null>(null);
   const [sessionStartTime, setSessionStartTime] = useState(new Date());
   const [showFeedback, setShowFeedback] = useState(false);
   const [sessionCompleted, setSessionCompleted] = useState(false);
   const [showTaskCompletionPrompt, setShowTaskCompletionPrompt] = useState(false);
+  const [isSendingMessage, setIsSendingMessage] = useState(false);
+  const [voiceEnabled, setVoiceEnabled] = useState(false); // TTS playback
   
   // Pre-immersive setup
   const [selectedSubtaskId, setSelectedSubtaskId] = useState<string>('');
   const [intendedDuration, setIntendedDuration] = useState('25');
   
   // Audio/Video Controls
-  const [micEnabled, setMicEnabled] = useState(false);
-  const [isListening, setIsListening] = useState(false);
-  const recognitionRef = useRef<any>(null);
   const [selectedAudio, setSelectedAudio] = useState<string>('none');
   const [audioVolume, setAudioVolume] = useState([70]);
   
@@ -332,68 +332,39 @@ export default function ImmersiveWorkSession({
     return () => clearInterval(encourageInterval);
   }, [viewState, personality, voiceTone]);
 
-  // Speech Recognition Setup
+  // Load chat history when chat dialog opens
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-      if (SpeechRecognition) {
-        recognitionRef.current = new SpeechRecognition();
-        recognitionRef.current.continuous = true;
-        recognitionRef.current.interimResults = false;
-        recognitionRef.current.lang = 'en-US';
+    if (showChat && user?.username) {
+      const loadHistory = async () => {
+        try {
+          const response = await fetch(API_ENDPOINTS.chat.history(user.username), {
+            method: 'GET',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+          });
 
-        recognitionRef.current.onresult = (event: any) => {
-          const transcript = event.results[event.results.length - 1][0].transcript;
-          
-          // Add user message to chat
-          const newMessage = { from: 'user', text: transcript };
-          setChatMessages(prev => [...prev, newMessage]);
-          
-          // Simulate body double response
-          setTimeout(() => {
-            const responseText = getChatResponse({ personality, voiceTone });
-            const response = { from: 'body-double', text: responseText };
-            setChatMessages(prev => [...prev, response]);
-            
-            setPizzaMessage(responseText);
-            setIsPizzaTalking(true);
-            setTimeout(() => setIsPizzaTalking(false), 3000);
-          }, 1000);
-        };
-
-        recognitionRef.current.onerror = (event: any) => {
-          // Handle errors gracefully without showing them in console
-          
-          if (event.error === 'no-speech') {
-            // User didn't say anything - this is normal, just ignore
-          } else if (event.error === 'not-allowed') {
-            toast.info('💬 Microphone access denied. Use the Chat button instead!');
-            setMicEnabled(false);
-          } else if (event.error === 'aborted') {
-            // User manually stopped - this is expected
-          } else if (event.error === 'network') {
-            toast.info('Network issue with speech recognition. Use the Chat button instead!');
+          if (response.ok) {
+            const data = await response.json();
+            if (data.messages && data.messages.length > 0) {
+              // Convert backend message format to frontend format
+              const formattedMessages = data.messages.slice(-10).reverse().map((msg: any) => ({
+                from: msg.role === 'user' ? 'user' : 'body-double',
+                text: msg.content
+              }));
+              
+              // Set messages (oldest first for display)
+              setChatMessages(formattedMessages);
+            }
           }
-          // Silently handle other errors
-          
-          setIsListening(false);
-          setMicEnabled(false);
-        };
-
-        recognitionRef.current.onend = () => {
-          if (isListening) {
-            recognitionRef.current.start();
-          }
-        };
-      }
+        } catch (error) {
+          console.error('Error loading chat history:', error);
+        }
+      };
+      
+      loadHistory();
     }
-
-    return () => {
-      if (recognitionRef.current) {
-        recognitionRef.current.stop();
-      }
-    };
-  }, [isListening]);
+  }, [showChat, user?.username]);
 
   const resetPomodoro = () => {
     const mins = isBreakTime ? breakDuration : studyDuration;
@@ -402,67 +373,129 @@ export default function ImmersiveWorkSession({
     setIsTimerRunning(false);
   };
 
-  const toggleMic = () => {
-    if (!micEnabled) {
-      // Check if speech recognition is available
-      if (!recognitionRef.current) {
-        toast.info('Speech recognition is not supported in your browser. Use the Chat button instead!');
-        return;
-      }
-
-      // Let the speech recognition API handle its own permission request
-      try {
-        setMicEnabled(true);
-        setIsListening(true);
-        recognitionRef.current.start();
-        toast.success('🎤 Microphone active - Speak to chat with your body double!');
-      } catch (error: any) {
-        // Handle errors gracefully
-        if (error.name === 'NotAllowedError' || error.name === 'InvalidStateError') {
-          toast.info('💬 Please allow microphone access when prompted, or use the Chat button!');
-        } else {
-          toast.info('💬 Use the Chat button to talk with your body double!');
-        }
-        setMicEnabled(false);
-        setIsListening(false);
-      }
+  const toggleVoice = () => {
+    setVoiceEnabled(!voiceEnabled);
+    if (!voiceEnabled) {
+      toast.success('🔊 Voice playback enabled');
     } else {
-      // Turning mic off
-      setMicEnabled(false);
-      setIsListening(false);
-      if (recognitionRef.current) {
-        try {
-          recognitionRef.current.stop();
-        } catch (error) {
-          // Silently handle stop errors
-        }
-      }
-      toast.success('🎤 Microphone muted');
+      toast.success('🔊 Voice playback disabled');
     }
   };
 
-  const sendMessage = () => {
-    if (!messageInput.trim()) return;
+  const playVoice = async (text: string, voiceModel?: string) => {
+    try {
+      const payload: any = {
+        text: text,
+        user_id: user?.username,
+        format: 'mp3'
+      };
+      
+      if (voiceModel) {
+        payload.reference_id = voiceModel;
+      }
+      
+      const response = await fetch(API_ENDPOINTS.voice.say, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (response.ok && response.body) {
+        // Create and play audio from response
+        const reader = response.body.getReader();
+        const chunks: Uint8Array[] = [];
+        
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          if (value) chunks.push(value);
+        }
+        
+        const blob = new Blob(chunks as BlobPart[], { type: 'audio/mpeg' });
+        const url = URL.createObjectURL(blob);
+        const audio = new Audio(url);
+        audio.play();
+        
+        // Clean up URL after playing
+        audio.onended = () => {
+          URL.revokeObjectURL(url);
+        };
+      }
+    } catch (error) {
+      console.error('Error playing voice:', error);
+    }
+  };
+
+  const sendMessage = async () => {
+    if (!messageInput.trim() || !user?.username) return;
     
     const newMessage = { from: 'user', text: messageInput };
     setChatMessages(prev => [...prev, newMessage]);
+    const userInput = messageInput;
+    setMessageInput('');
+    setIsSendingMessage(true);
     
-    // Simulate body double response
-    setTimeout(() => {
-      const responseText = getChatResponse({ personality, voiceTone });
-      const response = {
+    try {
+      // Call the backend chat API to get agent response
+      const response = await fetch(API_ENDPOINTS.chat.send, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          user_id: user.username,
+          text: userInput,
+        }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        const responseText = data.text || getChatResponse({ personality, voiceTone });
+        const agentResponse = {
+          from: 'body-double',
+          text: responseText
+        };
+        setChatMessages(prev => [...prev, agentResponse]);
+        
+        // Update pizza message and animate
+        setPizzaMessage(responseText);
+        setIsPizzaTalking(true);
+        setTimeout(() => setIsPizzaTalking(false), 3000);
+        
+        // Play voice if enabled
+        if (voiceEnabled && data.text && data.voice_model) {
+          playVoice(responseText, data.voice_model);
+        }
+      } else {
+        // Fallback to mock response on error
+        console.error('Chat API error:', response.status);
+        const fallbackResponse = getChatResponse({ personality, voiceTone });
+        const responseMsg = {
+          from: 'body-double',
+          text: fallbackResponse
+        };
+        setChatMessages(prev => [...prev, responseMsg]);
+        setPizzaMessage(fallbackResponse);
+        setIsPizzaTalking(true);
+        setTimeout(() => setIsPizzaTalking(false), 3000);
+      }
+    } catch (error) {
+      console.error('Error sending message to chat API:', error);
+      // Fallback to mock response on error
+      const fallbackResponse = getChatResponse({ personality, voiceTone });
+      const responseMsg = {
         from: 'body-double',
-        text: responseText
+        text: fallbackResponse
       };
-      setChatMessages(prev => [...prev, response]);
-      
-      // Update pizza message and animate
-      setPizzaMessage(responseText);
+      setChatMessages(prev => [...prev, responseMsg]);
+      setPizzaMessage(fallbackResponse);
       setIsPizzaTalking(true);
       setTimeout(() => setIsPizzaTalking(false), 3000);
-    }, 1000);
-    
-    setMessageInput('');
+    } finally {
+      setIsSendingMessage(false);
+    }
   };
 
   const calculateSessionDuration = () => {
@@ -1057,54 +1090,6 @@ export default function ImmersiveWorkSession({
                   {selectedRoom.name}
                 </span>
               </div>
-
-              {/* Microphone Status */}
-              {micEnabled && (
-                <motion.div
-                  initial={{ opacity: 0, x: -20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  className="flex items-center gap-2 px-4 py-2 rounded-full"
-                  style={{
-                    background: 'rgba(207, 232, 237, 0.95)',
-                    border: '2px solid #F7A64B'
-                  }}
-                >
-                  <Mic className="size-4 text-red-500 animate-pulse" />
-                  <span 
-                    style={{ 
-                      fontFamily: 'Inter, sans-serif',
-                      color: '#8B5E3C',
-                      fontSize: '0.875rem',
-                      fontWeight: 600
-                    }}
-                  >
-                    🎤 Listening...
-                  </span>
-                </motion.div>
-              )}
-              
-              {/* Helpful tip when mic isn't enabled */}
-              {!micEnabled && (
-                <motion.div
-                  initial={{ opacity: 0, x: -20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  className="flex items-center gap-2 px-4 py-2 rounded-full"
-                  style={{
-                    background: 'rgba(255, 249, 244, 0.85)',
-                    border: '2px solid #CFE8ED'
-                  }}
-                >
-                  <span 
-                    style={{ 
-                      fontFamily: 'Inter, sans-serif',
-                      color: '#8B5E3C',
-                      fontSize: '0.75rem'
-                    }}
-                  >
-                    💡 Enable mic to talk with your body double
-                  </span>
-                </motion.div>
-              )}
             </div>
 
             {/* Audio Selection */}
@@ -1323,10 +1308,10 @@ export default function ImmersiveWorkSession({
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: 400 }}
               className="absolute right-6 top-1/2 transform -translate-y-1/2 z-30"
-              style={{ width: '380px', maxHeight: '500px' }}
+              style={{ width: '380px', height: '500px' }}
             >
               <Card 
-                className="flex flex-col h-full"
+                className="flex flex-col h-full overflow-hidden"
                 style={{
                   background: 'rgba(255, 249, 244, 0.98)',
                   borderRadius: '20px',
@@ -1335,7 +1320,7 @@ export default function ImmersiveWorkSession({
                 }}
               >
                 <div 
-                  className="p-4 border-b flex items-center justify-between"
+                  className="p-4 border-b flex items-center justify-between flex-shrink-0"
                   style={{ borderColor: '#CFE8ED' }}
                 >
                   <h4 
@@ -1359,31 +1344,33 @@ export default function ImmersiveWorkSession({
                   </Button>
                 </div>
                 
-                <ScrollArea className="flex-1 p-4" style={{ maxHeight: '300px' }}>
-                  <div className="space-y-3">
-                    {chatMessages.map((msg, idx) => (
-                      <div
-                        key={idx}
-                        className={`flex ${msg.from === 'user' ? 'justify-end' : 'justify-start'}`}
-                      >
+                <div className="flex-1 overflow-hidden p-4">
+                  <ScrollArea style={{ height: '100%' }}>
+                    <div className="space-y-3">
+                      {chatMessages.map((msg, idx) => (
                         <div
-                          className={`max-w-[80%] rounded-xl p-3`}
-                          style={{
-                            background: msg.from === 'user' ? '#F7A64B' : 'rgba(207, 232, 237, 0.8)',
-                            color: msg.from === 'user' ? '#FFF9F4' : '#2D2D2D',
-                            fontFamily: 'Lexend Deca, sans-serif',
-                            fontSize: '0.875rem'
-                          }}
+                          key={idx}
+                          className={`flex ${msg.from === 'user' ? 'justify-end' : 'justify-start'}`}
                         >
-                          {msg.text}
+                          <div
+                            className={`max-w-[80%] rounded-xl p-3`}
+                            style={{
+                              background: msg.from === 'user' ? '#F7A64B' : 'rgba(207, 232, 237, 0.8)',
+                              color: msg.from === 'user' ? '#FFF9F4' : '#2D2D2D',
+                              fontFamily: 'Lexend Deca, sans-serif',
+                              fontSize: '0.875rem'
+                            }}
+                          >
+                            {msg.text}
+                          </div>
                         </div>
-                      </div>
-                    ))}
-                  </div>
-                </ScrollArea>
+                      ))}
+                    </div>
+                  </ScrollArea>
+                </div>
 
                 <div 
-                  className="p-4 border-t"
+                  className="p-4 border-t flex-shrink-0"
                   style={{ borderColor: '#CFE8ED' }}
                 >
                   <div className="flex gap-2">
@@ -1402,14 +1389,16 @@ export default function ImmersiveWorkSession({
                     />
                     <Button 
                       onClick={sendMessage}
+                      disabled={isSendingMessage || !messageInput.trim()}
                       size="sm"
                       style={{
-                        background: '#F7A64B',
+                        background: isSendingMessage || !messageInput.trim() ? '#CCC' : '#F7A64B',
                         color: '#FFF9F4',
-                        borderRadius: '12px'
+                        borderRadius: '12px',
+                        cursor: isSendingMessage || !messageInput.trim() ? 'not-allowed' : 'pointer'
                       }}
                     >
-                      <MessageCircle className="size-4" />
+                      {isSendingMessage ? '...' : <MessageCircle className="size-4" />}
                     </Button>
                   </div>
                 </div>
@@ -1445,13 +1434,13 @@ export default function ImmersiveWorkSession({
         {/* Bottom Control Panel */}
         <div className="absolute bottom-0 left-0 right-0 p-6 bg-gradient-to-t from-black/60 to-transparent z-20">
           <div className="max-w-4xl mx-auto flex items-center justify-center gap-4">
-            {/* Microphone Toggle with Speech-to-Text */}
+            {/* Voice Toggle */}
             <Button
               size="lg"
-              onClick={toggleMic}
+              onClick={toggleVoice}
               style={{
-                background: micEnabled ? '#CFE8ED' : 'rgba(207, 232, 237, 0.4)',
-                color: micEnabled ? '#8B5E3C' : '#FFF9F4',
+                background: voiceEnabled ? '#CFE8ED' : 'rgba(207, 232, 237, 0.4)',
+                color: voiceEnabled ? '#8B5E3C' : '#FFF9F4',
                 fontFamily: 'Inter, sans-serif',
                 borderRadius: '16px',
                 padding: '12px 24px',
@@ -1459,15 +1448,15 @@ export default function ImmersiveWorkSession({
                 minWidth: '180px'
               }}
             >
-              {micEnabled ? (
+              {voiceEnabled ? (
                 <>
-                  <Mic className="size-5 mr-2" />
-                  Mic Active
+                  <Volume2 className="size-5 mr-2" />
+                  Voice Active
                 </>
               ) : (
                 <>
-                  <MicOff className="size-5 mr-2" />
-                  Enable Mic
+                  <VolumeX className="size-5 mr-2" />
+                  Enable Voice
                 </>
               )}
             </Button>

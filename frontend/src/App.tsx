@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { fetchTasks, createTask, updateTask as updateTaskApi, deleteTask as deleteTaskApi } from './utils/tasksApi';
 import { getVoiceToneFromModelId, VoiceTone } from './utils/voiceMapping';
 import { DndProvider } from 'react-dnd';
@@ -10,8 +10,9 @@ import AllTasksTab from './components/AllTasksTab';
 import Register from './components/Register';
 import IntroTutorial from './components/IntroTutorial';
 import PersonalityCustomization from './components/PersonalityCustomization';
+import GlobalChat from './components/GlobalChat';
 import { Button } from './components/ui/button';
-import { User, Settings } from 'lucide-react';
+import { User, Settings, Volume2, VolumeX } from 'lucide-react';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 
 export interface Subtask {
@@ -114,6 +115,7 @@ function App() {
   const [showPersonalityCustomization, setShowPersonalityCustomization] = useState(false);
   const [personality, setPersonality] = useState<'gentle' | 'funny' | 'pushy'>('gentle');
   const [voiceTone, setVoiceTone] = useState<VoiceTone>('ariana');
+  const [voiceEnabled, setVoiceEnabled] = useState(false);
   
   const userName = user?.username || 'Guest';
   const [tasksLoading, setTasksLoading] = useState(false);
@@ -242,6 +244,22 @@ function App() {
                 Personality
               </Button>
               <Button
+                onClick={() => setVoiceEnabled(!voiceEnabled)}
+                className="friendly-button"
+                style={{ 
+                  background: voiceEnabled ? '#CFE8ED' : '#FFE4C4', 
+                  color: '#2D2D2D' 
+                }}
+                size="sm"
+              >
+                {voiceEnabled ? (
+                  <Volume2 className="size-4 mr-2" />
+                ) : (
+                  <VolumeX className="size-4 mr-2" />
+                )}
+                Voice
+              </Button>
+              <Button
                 onClick={() => setShowRegister(true)}
                 className="friendly-button"
                 style={{ background: '#CFE8ED', color: '#2D2D2D' }}
@@ -358,6 +376,13 @@ function App() {
             onClose={() => setShowPersonalityCustomization(false)}
           />
         )}
+        
+        {/* Global Chat - Available site-wide for logged in users */}
+        <GlobalChat 
+          personality={personality} 
+          voiceTone={voiceTone}
+          voiceEnabled={voiceEnabled}
+        />
         
         <Toaster />
       </div>

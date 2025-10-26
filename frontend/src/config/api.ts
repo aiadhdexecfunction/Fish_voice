@@ -32,6 +32,7 @@ export const API_ENDPOINTS = {
   // Chat
   chat: {
     send: `${API_BASE_URL}/chat/send`,
+    history: (userId: string) => `${API_BASE_URL}/chat/history/${userId}`,
   },
   
   // Pomodoro
