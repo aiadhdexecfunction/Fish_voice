@@ -3,7 +3,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 # Import all route modules
-from routes import voice, accounts, chat, preferences, pomodoro, composio, websocket, health
+from routes import voice, accounts, chat, preferences, pomodoro, composio, websocket, health, tasks
 
 # Import core modules
 from database import init_db
@@ -26,6 +26,7 @@ app.include_router(pomodoro.router)
 app.include_router(composio.router)
 app.include_router(websocket.router)
 app.include_router(health.router)
+app.include_router(tasks.router)
 
 # Initialize database
 init_db()

@@ -221,6 +221,33 @@
     <button id="btnStopPom">POST /pomodoro/stop</button>
   </fieldset>
 
+  <!-- Tasks -->
+  <fieldset>
+    <legend>Tasks Management</legend>
+    <div class="row">
+      <div>
+        <button id="btnLoadTasks">GET /tasks/</button>
+        <div class="muted" id="tasksOut"></div>
+        <div id="tasksList" style="margin-top: 12px;"></div>
+      </div>
+      <div>
+        <h4>Add/Edit Task</h4>
+        <label>Task Name</label>
+        <input id="taskName" type="text" placeholder="e.g., Complete hackathon" />
+        <label>Description</label>
+        <input id="taskDesc" type="text" placeholder="e.g., Urgent hackathon project" />
+        <label>Subtasks (comma-separated)</label>
+        <input id="taskSubtasks" type="text" placeholder="finish backend, integrate frontend" />
+        <label>Due Date (optional)</label>
+        <input id="taskDueDate" type="datetime-local" />
+        <button id="btnAddTask">POST /tasks/add</button>
+        <button id="btnUpdateTask">PUT /tasks/update/{name}</button>
+        <button id="btnDeleteTask" style="background: #b00; color: white;">DELETE /tasks/delete/{name}</button>
+        <div class="muted" id="taskActionOut"></div>
+      </div>
+    </div>
+  </fieldset>
+
   <!-- Composio: Gmail, Google Calendar, Canvas & Google Drive -->
   <fieldset>
     <legend>Composio — Gmail, Google Calendar, Canvas & Google Drive</legend>
@@ -714,6 +741,168 @@
       if (!id) { $("driveStatusOut").textContent = "enter connection_id"; return; }
       const r = await fetch(`${api()}/integrations/googledrive/status?connection_id=${encodeURIComponent(id)}`);
       $("driveStatusOut").textContent = JSON.stringify(await r.json(), null, 2);
+    };
+
+    // ---- Tasks Management ----
+    $("btnLoadTasks").onclick = async () => {
+      const out = $("tasksOut");
+      const list = $("tasksList");
+      out.textContent = "Loading...";
+      try {
+        const r = await fetch(`${api()}/tasks/`);
+        const j = await r.json();
+        if (!r.ok) {
+          out.textContent = j.error || "error";
+          return;
+        }
+        out.textContent = `Loaded ${j.count} tasks`;
+        
+        // Display tasks in a nice format
+        if (!j.tasks || Object.keys(j.tasks).length === 0) {
+          list.innerHTML = "<div class='muted'>No tasks found</div>";
+          return;
+        }
+        
+        let html = "<div style='display: grid; gap: 12px;'>";
+        for (const [name, task] of Object.entries(j.tasks)) {
+          const dueDate = task.due_date ? new Date(task.due_date).toLocaleString() : "No due date";
+          const subtasksList = task.subtasks.length > 0 
+            ? task.subtasks.map(s => `• ${s}`).join("<br>") 
+            : "<span class='muted'>No subtasks</span>";
+          
+          html += `
+            <div style='border: 1px solid #ddd; border-radius: 8px; padding: 12px; background: #f9f9f9;'>
+              <strong>${name}</strong><br>
+              <span class='muted'>${task.description}</span><br>
+              <div style='margin: 8px 0; font-size: 14px;'>${subtasksList}</div>
+              <small class='muted'>Due: ${dueDate}</small>
+            </div>
+          `;
+        }
+        html += "</div>";
+        list.innerHTML = html;
+      } catch (e) {
+        out.textContent = "error";
+        list.innerHTML = "<div class='err'>Failed to load tasks</div>";
+      }
+    };
+
+    $("btnAddTask").onclick = async () => {
+      const name = $("taskName").value.trim();
+      const desc = $("taskDesc").value.trim();
+      const subtasksStr = $("taskSubtasks").value.trim();
+      const dueDate = $("taskDueDate").value;
+      
+      if (!name) {
+        $("taskActionOut").textContent = "Please enter a task name";
+        return;
+      }
+      
+      const subtasks = subtasksStr ? subtasksStr.split(',').map(s => s.trim()).filter(s => s) : [];
+      
+      $("taskActionOut").textContent = "Adding task...";
+      try {
+        const r = await fetch(`${api()}/tasks/add`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            name,
+            description: desc || "No description",
+            subtasks,
+            due_date: dueDate || ""
+          })
+        });
+        const j = await r.json();
+        if (!r.ok) {
+          $("taskActionOut").textContent = `Error: ${j.detail || j.error || "Failed"}`;
+          return;
+        }
+        $("taskActionOut").textContent = j.message || "Task added successfully";
+        // Clear form
+        $("taskName").value = "";
+        $("taskDesc").value = "";
+        $("taskSubtasks").value = "";
+        $("taskDueDate").value = "";
+        // Refresh task list
+        $("btnLoadTasks").click();
+      } catch (e) {
+        $("taskActionOut").textContent = "Failed to add task";
+      }
+    };
+
+    $("btnUpdateTask").onclick = async () => {
+      const name = $("taskName").value.trim();
+      if (!name) {
+        $("taskActionOut").textContent = "Please enter a task name to update";
+        return;
+      }
+      
+      const desc = $("taskDesc").value.trim();
+      const subtasksStr = $("taskSubtasks").value.trim();
+      const dueDate = $("taskDueDate").value;
+      
+      const updateData = {};
+      if (desc) updateData.description = desc;
+      if (subtasksStr) updateData.subtasks = subtasksStr.split(',').map(s => s.trim()).filter(s => s);
+      if (dueDate) updateData.due_date = dueDate;
+      
+      if (Object.keys(updateData).length === 0) {
+        $("taskActionOut").textContent = "Please enter at least one field to update";
+        return;
+      }
+      
+      $("taskActionOut").textContent = "Updating task...";
+      try {
+        const r = await fetch(`${api()}/tasks/update/${encodeURIComponent(name)}`, {
+          method: "PUT",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(updateData)
+        });
+        const j = await r.json();
+        if (!r.ok) {
+          $("taskActionOut").textContent = `Error: ${j.detail || j.error || "Failed"}`;
+          return;
+        }
+        $("taskActionOut").textContent = j.message || "Task updated successfully";
+        // Refresh task list
+        $("btnLoadTasks").click();
+      } catch (e) {
+        $("taskActionOut").textContent = "Failed to update task";
+      }
+    };
+
+    $("btnDeleteTask").onclick = async () => {
+      const name = $("taskName").value.trim();
+      if (!name) {
+        $("taskActionOut").textContent = "Please enter a task name to delete";
+        return;
+      }
+      
+      if (!confirm(`Are you sure you want to delete task "${name}"?`)) {
+        return;
+      }
+      
+      $("taskActionOut").textContent = "Deleting task...";
+      try {
+        const r = await fetch(`${api()}/tasks/delete/${encodeURIComponent(name)}`, {
+          method: "DELETE"
+        });
+        const j = await r.json();
+        if (!r.ok) {
+          $("taskActionOut").textContent = `Error: ${j.detail || j.error || "Failed"}`;
+          return;
+        }
+        $("taskActionOut").textContent = j.message || "Task deleted successfully";
+        // Clear form
+        $("taskName").value = "";
+        $("taskDesc").value = "";
+        $("taskSubtasks").value = "";
+        $("taskDueDate").value = "";
+        // Refresh task list
+        $("btnLoadTasks").click();
+      } catch (e) {
+        $("taskActionOut").textContent = "Failed to delete task";
+      }
     };
   </script>
 </body>
