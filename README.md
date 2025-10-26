@@ -1,5 +1,9 @@
 # Body Double (Letta + Fish Audio) — Minimal
 
+> **Note:** For information on integrating the frontend with the backend API, see:
+> - `INTEGRATION_ANALYSIS.md` - Detailed analysis of functionality gaps
+> - `INTEGRATION_STATUS.md` - Current implementation status and next steps
+
 ## download
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt

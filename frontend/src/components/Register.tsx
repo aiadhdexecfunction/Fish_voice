@@ -1,25 +1,52 @@
-import { useState } from 'react';
+import React, { useState } from 'react';
 import { Card } from './ui/card';
 import { Input } from './ui/input';
 import { Button } from './ui/button';
 import { Label } from './ui/label';
 import { Eye, EyeOff, Sparkles } from 'lucide-react';
+import { useAuth } from '../contexts/AuthContext';
+import { toast } from './ui/sonner';
 
-export default function Register() {
+interface RegisterProps {
+  onClose: () => void;
+}
+
+export default function Register({ onClose }: RegisterProps) {
   const [showPassword, setShowPassword] = useState(false);
   const [isSignUp, setIsSignUp] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
   const [formData, setFormData] = useState({
     name: '',
     password: '',
   });
+  
+  const { login, register: registerUser } = useAuth();
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    console.log(isSignUp ? 'Registration data:' : 'Sign in data:', formData);
+    setIsLoading(true);
+    
+    try {
+      if (isSignUp) {
+        await registerUser(formData.name, formData.password);
+        toast.success('Account created successfully! 🎉');
+        onClose();
+      } else {
+        await login(formData.name, formData.password);
+        toast.success('Welcome back! 👋');
+        onClose();
+      }
+    } catch (error: any) {
+      const errorMessage = error.message || 'An error occurred. Please try again.';
+      toast.error(errorMessage);
+      console.error('Auth error:', error);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handleGoogleSignIn = () => {
-    console.log('Google sign-in clicked');
+    toast.info('Google sign-in coming soon!');
   };
 
   return (
@@ -129,17 +156,19 @@ export default function Register() {
           <Button
             type="submit"
             className="w-full h-12 friendly-button mt-6"
+            disabled={isLoading}
             style={{ 
               background: 'linear-gradient(135deg, #F7A64B 0%, #FFB86F 100%)', 
               color: '#FFFFFF',
               borderRadius: '12px',
               fontFamily: 'Inter, sans-serif',
               fontWeight: 600,
-              fontSize: '1rem'
+              fontSize: '1rem',
+              opacity: isLoading ? 0.7 : 1
             }}
           >
             <Sparkles className="size-5 mr-2" />
-            {isSignUp ? 'Sign Up' : 'Sign In'}
+            {isLoading ? (isSignUp ? 'Creating account...' : 'Signing in...') : (isSignUp ? 'Sign Up' : 'Sign In')}
           </Button>
         </form>
 

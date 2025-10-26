@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { DndProvider } from 'react-dnd';
 import { HTML5Backend } from 'react-dnd-html5-backend';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './components/ui/tabs';
-import { Toaster } from './components/ui/sonner';
+import { Toaster, toast } from './components/ui/sonner';
 import DailyTasksTab from './components/DailyTasksTab';
 import AllTasksTab from './components/AllTasksTab';
 import Register from './components/Register';
@@ -10,6 +10,7 @@ import IntroTutorial from './components/IntroTutorial';
 import PersonalityCustomization from './components/PersonalityCustomization';
 import { Button } from './components/ui/button';
 import { User, Settings } from 'lucide-react';
+import { AuthProvider, useAuth } from './contexts/AuthContext';
 
 export interface Subtask {
   id: string;
@@ -100,10 +101,12 @@ function App() {
   const [sessionNotes, setSessionNotes] = useState<SessionNote[]>([]);
   const [showRegister, setShowRegister] = useState(false);
   const [showIntro, setShowIntro] = useState(true); // Show tutorial on first visit
-  const [userName] = useState('Alex'); // In real app, this would come from auth
+  const { user, isAuthenticated, logout, loading } = useAuth();
   const [showPersonalityCustomization, setShowPersonalityCustomization] = useState(false);
   const [personality, setPersonality] = useState<'gentle' | 'funny' | 'pushy'>('gentle');
   const [voiceTone, setVoiceTone] = useState<'ariana' | 'gordon' | 'snoop'>('ariana');
+  
+  const userName = user?.username || 'Guest';
 
   // Get time-based greeting
   const getGreeting = () => {
@@ -113,18 +116,30 @@ function App() {
     return 'Good evening';
   };
 
-  // Show register page
+  // Show loading state
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center" style={{ background: '#FFF9F4' }}>
+        <div className="text-6xl animate-bounce-gentle">🍕</div>
+      </div>
+    );
+  }
+
+  // Show register/login page if not authenticated
+  if (!isAuthenticated) {
+    return (
+      <>
+        <Register onClose={() => {}} />
+        <Toaster />
+      </>
+    );
+  }
+
+  // Show register modal if triggered
   if (showRegister) {
     return (
       <>
-        <Register />
-        <Button
-          onClick={() => setShowRegister(false)}
-          className="fixed top-4 right-4 z-50 friendly-button"
-          style={{ background: '#F7A64B', color: '#FFFFFF' }}
-        >
-          Back to App
-        </Button>
+        <Register onClose={() => setShowRegister(false)} />
         <Toaster />
       </>
     );
@@ -172,7 +187,18 @@ function App() {
                 size="sm"
               >
                 <User className="size-4 mr-2" />
-                Account
+                {user?.username || 'Account'}
+              </Button>
+              <Button
+                onClick={() => {
+                  logout();
+                  toast.success('Logged out successfully');
+                }}
+                className="friendly-button"
+                style={{ background: '#FFE4C4', color: '#2D2D2D' }}
+                size="sm"
+              >
+                Logout
               </Button>
             </div>
           </div>
@@ -271,4 +297,12 @@ function App() {
   );
 }
 
-export default App;
+function AppWithAuth() {
+  return (
+    <AuthProvider>
+      <App />
+    </AuthProvider>
+  );
+}
+
+export default AppWithAuth;
