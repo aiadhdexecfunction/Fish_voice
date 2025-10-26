@@ -2,11 +2,12 @@ from fastapi import APIRouter, UploadFile, File
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from models import SayIn
-from fish_audio import fish_tts_stream, fish_asr
+from fish_audio import fish_tts_stream, fish_asr, FISH_MODE
 from database import get_account
 from personalities import get_personality, PERSONALITIES
 from models import UserPrefs
 from shared_state import user_prefs
+from config import settings
 
 router = APIRouter(prefix="/voice", tags=["voice"])
 
@@ -50,3 +51,13 @@ async def voice_asr(file: UploadFile = File(...), language: str = "en"):
     audio_bytes = await file.read()
     res = fish_asr(audio_bytes, language)
     return JSONResponse(res)
+
+
+@router.get("/models", summary="List voice models (SDK only)")
+def list_models(self_only: bool = True):
+    if FISH_MODE != "sdk":
+        return JSONResponse({"error": "SDK not available; cannot list models."}, status_code=400)
+    from fish_audio_sdk import Session
+    s = Session(settings.FISH_API_KEY)
+    models = s.list_models(self_only=self_only)
+    return {"items": [{"id": m.id, "title": m.title} for m in models.items]}
