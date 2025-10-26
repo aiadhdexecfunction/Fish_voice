@@ -37,7 +37,7 @@ class Event(BaseModel):
 
 # ===================== User preferences =====================
 class UserPrefs(BaseModel):
-    voice_enabled: bool = False
+    voice_enabled: bool = True
     personality_id: str = "focus_friend"
 
 
@@ -56,7 +56,19 @@ class SayIn(BaseModel):
 
 # ===================== Composio Gmail integration =====================
 class GmailConnectIn(BaseModel):
-    user_id: Optional[str] = None  # 建议传入你自己的用户 UUID；不传则自动生成
+    user_id: Optional[str] = None
+
+
+class CanvasConnectIn(BaseModel):
+    user_id: Optional[str] = None
+
+
+class GoogleCalConnectIn(BaseModel):
+    user_id: Optional[str] = None
+
+
+class GoogleDriveConnectIn(BaseModel):
+    user_id: Optional[str] = None
 
 
 # ===================== Pomodoro =====================

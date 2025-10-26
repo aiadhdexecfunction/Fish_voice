@@ -82,10 +82,160 @@ def get_gmail_connection_status(connection_id: str):
         return {"error": "get_status_failed", "detail": str(e)}
 
 
+def initiate_canvas_connection(user_id: Optional[str] = None):
+    """Start Canvas OAuth via Composio"""
+    if not COMPOSIO_AVAILABLE:
+        return {"error": "composio_not_installed"}
+    if not composio_client:
+        return {"error": "composio_not_configured"}
+    if not settings.COMPOSIO_CANVAS_AUTH_CONFIG:
+        return {"error": "missing_canvas_auth_config"}
+
+    user_uuid = _ensure_uuid(user_id)
+    try:
+        req = composio_client.connected_accounts.initiate(
+            user_id=user_uuid,
+            auth_config_id=settings.COMPOSIO_CANVAS_AUTH_CONFIG,
+        )
+        return {
+            "ok": True,
+            "user_id": user_uuid,
+            "connection_id": req.id,
+            "redirect_url": req.redirect_url,
+            "status": getattr(req, "status", None),
+            "provider": "canvas",
+        }
+    except Exception as e:
+        return {"error": "initiate_failed", "detail": str(e)}
+
+
+def get_canvas_connection_status(connection_id: str):
+    """Check Canvas connection status"""
+    if not COMPOSIO_AVAILABLE:
+        return {"error": "composio_not_installed"}
+    if not composio_client:
+        return {"error": "composio_not_configured"}
+    if not connection_id:
+        return {"error": "missing_connection_id"}
+
+    try:
+        acc = composio_client.connected_accounts.get(connection_id)
+        return {
+            "ok": True,
+            "connection_id": connection_id,
+            "status": getattr(acc, "status", None),
+            "provider": getattr(acc, "provider", None),
+            "created_at": getattr(acc, "created_at", None),
+        }
+    except Exception as e:
+        return {"error": "get_status_failed", "detail": str(e)}
+
+
+def initiate_googlecalendar_connection(user_id: Optional[str] = None):
+    """Start Google Calendar OAuth via Composio"""
+    if not COMPOSIO_AVAILABLE:
+        return {"error": "composio_not_installed"}
+    if not composio_client:
+        return {"error": "composio_not_configured"}
+    if not settings.COMPOSIO_GOOGLECAL_AUTH_CONFIG:
+        return {"error": "missing_googlecal_auth_config"}
+
+    user_uuid = _ensure_uuid(user_id)
+    try:
+        req = composio_client.connected_accounts.initiate(
+            user_id=user_uuid,
+            auth_config_id=settings.COMPOSIO_GOOGLECAL_AUTH_CONFIG,
+        )
+        return {
+            "ok": True,
+            "user_id": user_uuid,
+            "connection_id": req.id,
+            "redirect_url": req.redirect_url,
+            "status": getattr(req, "status", None),
+            "provider": "googlecalendar",
+        }
+    except Exception as e:
+        return {"error": "initiate_failed", "detail": str(e)}
+
+
+def get_googlecalendar_connection_status(connection_id: str):
+    """Check Google Calendar connection status"""
+    if not COMPOSIO_AVAILABLE:
+        return {"error": "composio_not_installed"}
+    if not composio_client:
+        return {"error": "composio_not_configured"}
+    if not connection_id:
+        return {"error": "missing_connection_id"}
+
+    try:
+        acc = composio_client.connected_accounts.get(connection_id)
+        return {
+            "ok": True,
+            "connection_id": connection_id,
+            "status": getattr(acc, "status", None),
+            "provider": getattr(acc, "provider", None),
+            "created_at": getattr(acc, "created_at", None),
+        }
+    except Exception as e:
+        return {"error": "get_status_failed", "detail": str(e)}
+
+
+def initiate_googledrive_connection(user_id: Optional[str] = None):
+    """Start Google Drive OAuth via Composio"""
+    if not COMPOSIO_AVAILABLE:
+        return {"error": "composio_not_installed"}
+    if not composio_client:
+        return {"error": "composio_not_configured"}
+    if not settings.COMPOSIO_GOOGLEDRIVE_AUTH_CONFIG:
+        return {"error": "missing_googledrive_auth_config"}
+
+    user_uuid = _ensure_uuid(user_id)
+    try:
+        req = composio_client.connected_accounts.initiate(
+            user_id=user_uuid,
+            auth_config_id=settings.COMPOSIO_GOOGLEDRIVE_AUTH_CONFIG,
+        )
+        return {
+            "ok": True,
+            "user_id": user_uuid,
+            "connection_id": req.id,
+            "redirect_url": req.redirect_url,
+            "status": getattr(req, "status", None),
+            "provider": "googledrive",
+        }
+    except Exception as e:
+        return {"error": "initiate_failed", "detail": str(e)}
+
+
+def get_googledrive_connection_status(connection_id: str):
+    """Check Google Drive connection status"""
+    if not COMPOSIO_AVAILABLE:
+        return {"error": "composio_not_installed"}
+    if not composio_client:
+        return {"error": "composio_not_configured"}
+    if not connection_id:
+        return {"error": "missing_connection_id"}
+
+    try:
+        acc = composio_client.connected_accounts.get(connection_id)
+        return {
+            "ok": True,
+            "connection_id": connection_id,
+            "status": getattr(acc, "status", None),
+            "provider": getattr(acc, "provider", None),
+            "created_at": getattr(acc, "created_at", None),
+        }
+    except Exception as e:
+        return {"error": "get_status_failed", "detail": str(e)}
+
+
 def get_composio_health():
     """Composio health check"""
     return {
         "available": COMPOSIO_AVAILABLE,
         "configured": bool(composio_client),
         "has_gmail_auth_config": bool(settings.COMPOSIO_GMAIL_AUTH_CONFIG),
+        "has_canvas_auth_config": bool(settings.COMPOSIO_CANVAS_AUTH_CONFIG),
+        "has_googlecal_auth_config": bool(settings.COMPOSIO_GOOGLECAL_AUTH_CONFIG),
+        "has_googledrive_auth_config": bool(settings.COMPOSIO_GOOGLEDRIVE_AUTH_CONFIG),
     }

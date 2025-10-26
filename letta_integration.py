@@ -22,23 +22,34 @@ def create_letta_agent(username: str) -> Optional[str]:
         print(f"[WARNING] Letta is not configured, skipping agent creation for {username}")
         return None
     try:
-        print(f"[DEBUG] Attempting to create Letta agent for {username}")
-        # Try different model formats that Letta might expect
-        model_options = ["openai/o4-mini", "openai/gpt-4o-mini", "gpt-4o-mini", "o4-mini"]
-        agent = None
+        print(f"[DEBUG] Attempting to create Letta agent for {username} using ADHD_Agent template")
+        # Try creating agent with ADHD_Agent template
+        try:
+            agent = letta.agents.create_from_template(
+                template_id="ADHD_Agent",
+                name=f"{username}-agent"
+            )
+            print(f"[DEBUG] Successfully created agent using ADHD_Agent template")
+        except Exception as e:
+            print(f"[DEBUG] Failed to create agent with ADHD_Agent template: {e}")
+            print(f"[DEBUG] Falling back to default model creation")
+            # Fallback to model-based creation if template doesn't work
+            model_options = ["openai/o4-mini", "openai/gpt-4o-mini", "gpt-4o-mini", "o4-mini"]
+            agent = None
+            
+            for model in model_options:
+                try:
+                    print(f"[DEBUG] Trying model: {model}")
+                    agent = letta.agents.create(name=f"{username}-agent", model=model)
+                    print(f"[DEBUG] Success with model: {model}")
+                    break
+                except Exception as e:
+                    print(f"[DEBUG] Failed with model {model}: {e}")
+                    continue
+            
+            if not agent:
+                raise Exception("All model formats failed")
         
-        for model in model_options:
-            try:
-                print(f"[DEBUG] Trying model: {model}")
-                agent = letta.agents.create(name=f"{username}-agent", model=model)
-                print(f"[DEBUG] Success with model: {model}")
-                break
-            except Exception as e:
-                print(f"[DEBUG] Failed with model {model}: {e}")
-                continue
-        
-        if not agent:
-            raise Exception("All model formats failed")
         print(f"[DEBUG] Agent created: {agent}")
         agent_id = getattr(agent, "id", None)
         print(f"[DEBUG] Agent ID extracted: {agent_id}")

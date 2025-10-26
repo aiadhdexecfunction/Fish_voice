@@ -17,6 +17,9 @@ class Settings(BaseSettings):
     # Composio (Gmail)
     COMPOSIO_API_KEY: Optional[str] = None
     COMPOSIO_GMAIL_AUTH_CONFIG: Optional[str] = None  
+    COMPOSIO_CANVAS_AUTH_CONFIG: Optional[str] = None 
+    COMPOSIO_GOOGLECAL_AUTH_CONFIG: Optional[str] = None 
+    COMPOSIO_GOOGLEDRIVE_AUTH_CONFIG: Optional[str] = None
 
     # Product logic
     FOLLOWUP_DELAY_SEC: int = int(os.getenv("FOLLOWUP_DELAY_SEC", "600"))

@@ -1,553 +1,721 @@
 <!doctype html>
 <html lang="en">
+
 <head>
-  <meta charset="utf-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>BodyDouble test client</title>
   <style>
-    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 24px; }
-    fieldset { border: 1px solid #ddd; border-radius: 8px; padding: 12px; margin-bottom: 16px; }
-    legend { font-weight: 700; }
-    label { display: block; margin: 6px 0 2px; }
-    input[type="text"], input[type="number"], textarea { width: 100%; padding: 8px; box-sizing: border-box; }
-    button { margin-top: 8px; padding: 8px 12px; cursor: pointer; }
-    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-    .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
-    .muted { color: #666; font-size: 12px; }
-    #log { white-space: pre-wrap; background: #fafafa; border: 1px solid #eee; padding: 10px; height: 240px; overflow: auto; }
-    .ok { color: #0a7; } .err { color: #b00; }
-    audio { width: 100%; margin-top: 8px; }
-    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; white-space: pre-wrap; }
+    body {
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      margin: 24px;
+    }
+
+    fieldset {
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      padding: 12px;
+      margin-bottom: 16px;
+    }
+
+    legend {
+      font-weight: 700;
+    }
+
+    label {
+      display: block;
+      margin: 6px 0 2px;
+    }
+
+    input[type="text"],
+    input[type="password"],
+    input[type="number"],
+    textarea {
+      width: 100%;
+      padding: 8px;
+      box-sizing: border-box;
+    }
+
+    button {
+      margin-top: 8px;
+      padding: 8px 12px;
+      cursor: pointer;
+    }
+
+    .row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+
+    .grid-3 {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+    }
+
+    .muted {
+      color: #666;
+      font-size: 12px;
+    }
+
+    #log {
+      white-space: pre-wrap;
+      background: #fafafa;
+      border: 1px solid #eee;
+      padding: 10px;
+      height: 240px;
+      overflow: auto;
+    }
+
+    .ok {
+      color: #0a7;
+    }
+
+    .err {
+      color: #b00;
+    }
+
+    audio {
+      width: 100%;
+      margin-top: 8px;
+    }
+
+    .mono {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+      white-space: pre-wrap;
+    }
   </style>
 </head>
+
 <body>
-<h1>BodyDouble test client</h1>
-<p class="muted">Use with your FastAPI server. First start: <code>uvicorn app:app --reload --port 8001</code></p>
+  <h1>BodyDouble test client</h1>
+  <p class="muted">Use with your FastAPI server. First start: <code>uvicorn app:app --reload --port 8000</code></p>
 
-	<fieldset>
-		<legend>Account Management</legend>
-		<div class="row">
-			<div>
-				<label>Username</label>
-				<input id="username" type="text" placeholder="Enter username" />
-				<label>Password</label>
-				<input id="password" type="password" placeholder="Enter password" />
-				<button id="btnRegister">Register</button>
-				<button id="btnLogin">Login</button>
-				<div class="muted" id="authOut"></div>
-			</div>
-			<div>
-				<label>Current User</label>
-				<div id="currentUser" class="muted">Not logged in</div>
-				<button id="btnLogout">Logout</button>
-				<label>Voice Model</label>
-				<input id="voiceModel" type="text" placeholder="Voice model ID" />
-				<button id="btnUpdateVoice">Update Voice Model</button>
-				<div class="muted" id="voiceUpdateOut"></div>
-			</div>
-		</div>
-	</fieldset>
+  <!-- Account Management -->
+  <fieldset>
+    <legend>Account Management</legend>
+    <div class="row">
+      <div>
+        <label>Username</label>
+        <input id="username" type="text" placeholder="Enter username" />
+        <label>Password</label>
+        <input id="password" type="password" placeholder="Enter password" />
+        <button id="btnRegister">Register</button>
+        <button id="btnLogin">Login</button>
+        <div class="muted" id="authOut"></div>
+      </div>
+      <div>
+        <label>Current User</label>
+        <div id="currentUser" class="muted">Not logged in</div>
+        <button id="btnLogout">Logout</button>
+        <label>Voice Model</label>
+        <input id="voiceModel" type="text" placeholder="Voice model ID" />
+        <button id="btnUpdateVoice">Update Voice Model</button>
+        <div class="muted" id="voiceUpdateOut"></div>
+      </div>
+    </div>
+  </fieldset>
 
-	<fieldset>
-		<legend>Config</legend>
-		<div class="row">
-			<div>
-				<label>API base URL</label>
-				<input id="baseUrl" type="text" value="http://localhost:8000" />
-			</div>
-			<div>
-				<label>User ID (auto-filled when logged in)</label>
-				<input id="userId" type="text" value="" readonly />
-			</div>
-		</div>
-		<div>
-			<button id="btnHealth">Health</button>
-			<span id="healthOut" class="muted"></span>
-		</div>
-	</fieldset>
-
-<!-- Personality -->
-<fieldset>
-  <legend>Personality</legend>
-  <div class="row">
-    <div>
-      <label>Available personalities</label>
-      <button id="btnListPersonalities">/personalities</button>
-      <div class="muted" id="personalitiesOut"></div>
+  <!-- Config -->
+  <fieldset>
+    <legend>Config</legend>
+    <div class="row">
+      <div>
+        <label>API base URL</label>
+        <input id="baseUrl" type="text" value="http://localhost:8000" />
+      </div>
+      <div>
+        <label>User ID (auto-filled when logged in)</label>
+        <input id="userId" type="text" value="" readonly />
+      </div>
     </div>
     <div>
-      <label>Set personality ID</label>
-      <input id="personalityId" type="text" placeholder="focus_friend" />
-      <button id="btnSetPersonality">/prefs/{user}/personality</button>
-      <div class="muted" id="personalitySetOut"></div>
+      <button id="btnHealth">Health</button>
+      <span id="healthOut" class="muted"></span>
     </div>
-  </div>
-</fieldset>
+  </fieldset>
 
-<!-- WebSocket -->
-<fieldset>
-  <legend>WebSocket events</legend>
-  <div>
-    <button id="btnWsConnect">Connect</button>
-    <button id="btnWsDisconnect">Disconnect</button>
-    <span id="wsState" class="muted">disconnected</span>
-  </div>
-  <div id="log"></div>
-</fieldset>
+  <!-- Personality -->
+  <fieldset>
+    <legend>Personality</legend>
+    <div class="row">
+      <div>
+        <label>Available personalities</label>
+        <button id="btnListPersonalities">/personalities</button>
+        <div class="muted" id="personalitiesOut"></div>
+      </div>
+      <div>
+        <label>Set personality ID</label>
+        <input id="personalityId" type="text" placeholder="focus_friend" />
+        <button id="btnSetPersonality">/prefs/{user}/personality</button>
+        <div class="muted" id="personalitySetOut"></div>
+      </div>
+    </div>
+  </fieldset>
 
-<!-- Chat -->
-<fieldset>
-  <legend>Chat</legend>
-  <label>Message</label>
-  <input id="chatText" type="text" value="Help me plan a 25-minute focus."/>
-  <button id="btnChatSend">POST /chat/send</button>
-  <div class="muted" id="chatResp"></div>
-</fieldset>
-
-<!-- Voice -->
-<fieldset>
-  <legend>Voice</legend>
-  <div class="grid-3">
+  <!-- WebSocket -->
+  <fieldset>
+    <legend>WebSocket events</legend>
     <div>
-      <label>Text</label>
-      <input id="sayText" type="text" value="Hello from BodyDouble"/>
-      <label>Format</label>
-      <input id="sayFormat" type="text" value="mp3"/>
-      <button id="btnSay">POST /voice/say</button>
-      <audio id="player" controls></audio>
+      <button id="btnWsConnect">Connect</button>
+      <button id="btnWsDisconnect">Disconnect</button>
+      <span id="wsState" class="muted">disconnected</span>
     </div>
+    <div id="log"></div>
+  </fieldset>
+
+  <!-- Chat -->
+  <fieldset>
+    <legend>Chat</legend>
+    <label>Message</label>
+    <input id="chatText" type="text" value="Help me plan a 25-minute focus." />
+    <button id="btnChatSend">POST /chat/send</button>
+    <div class="muted" id="chatResp"></div>
+  </fieldset>
+
+  <!-- Voice -->
+  <fieldset>
+    <legend>Voice</legend>
+    <div class="grid-3">
+      <div>
+        <label>Text</label>
+        <input id="sayText" type="text" value="Hello from BodyDouble" />
+        <label>Format</label>
+        <input id="sayFormat" type="text" value="mp3" />
+        <button id="btnSay">POST /voice/say</button>
+        <audio id="player" controls></audio>
+      </div>
+      <div>
+        <label>ASR upload (.wav)</label>
+        <input id="asrFile" type="file" accept="audio/*" />
+        <button id="btnAsr">POST /voice/asr</button>
+        <div class="muted" id="asrOut"></div>
+      </div>
+      <div>
+        <label>Voice models</label>
+        <button id="btnListVoices">/voice/models</button>
+        <select id="voiceSelect">
+          <option value="">Default (personality/server)</option>
+        </select>
+        <div class="muted" id="voiceListOut"></div>
+        <label>Override reference ID</label>
+        <input id="voiceRef" type="text" placeholder="reference id (optional)" />
+        <label>Voice preference</label>
+        <button id="btnVoiceOn">Enable voice</button>
+        <button id="btnVoiceOff">Disable voice</button>
+        <div class="muted" id="prefOut"></div>
+      </div>
+    </div>
+  </fieldset>
+
+  <!-- Pomodoro -->
+  <fieldset>
+    <legend>Pomodoro</legend>
+    <div class="grid-3">
+      <div><label>Focus minutes</label><input id="focusMin" type="number" value="25" /></div>
+      <div><label>Break minutes</label><input id="breakMin" type="number" value="5" /></div>
+      <div><label>Cycles</label><input id="cycles" type="number" value="3" /></div>
+    </div>
+    <button id="btnStartPom">POST /pomodoro/start</button>
+    <button id="btnStopPom">POST /pomodoro/stop</button>
+  </fieldset>
+
+  <!-- Composio: Gmail, Google Calendar, Canvas & Google Drive -->
+  <fieldset>
+    <legend>Composio — Gmail, Google Calendar, Canvas & Google Drive</legend>
+
     <div>
-      <label>ASR upload (.wav)</label>
-      <input id="asrFile" type="file" accept="audio/*"/>
-      <button id="btnAsr">POST /voice/asr</button>
-      <div class="muted" id="asrOut"></div>
+      <button id="btnComposioHealth">GET /integrations/composio/health</button>
+      <div id="composioHealthOut" class="mono"></div>
     </div>
-    <div>
-      <label>Voice models</label>
-      <button id="btnListVoices">/voice/models</button>
-      <select id="voiceSelect">
-        <option value="">Default (personality/server)</option>
-      </select>
-      <div class="muted" id="voiceListOut"></div>
-      <label>Override reference ID</label>
-      <input id="voiceRef" type="text" placeholder="reference id (optional)" />
-      <label>Voice preference</label>
-      <button id="btnVoiceOn">Enable voice</button>
-      <button id="btnVoiceOff">Disable voice</button>
-      <div class="muted" id="prefOut"></div>
+
+    <hr />
+
+    <div class="row">
+      <!-- Gmail -->
+      <div>
+        <h4>Gmail OAuth</h4>
+        <button id="btnGmailStart">POST /integrations/gmail/initiate</button>
+        <div class="muted">Redirect URL (open in a new window to complete Google authorization)</div>
+        <div id="gmailRedirect" class="mono"></div>
+        <label>connection_id</label>
+        <input id="gmailConnId" type="text" placeholder="Will be in the response, e.g., con_..." />
+        <button id="btnGmailStatus">GET /integrations/gmail/status?connection_id=...</button>
+        <div class="mono" id="gmailStatusOut"></div>
+        <div class="muted">After authorization, status should be <code>CONNECTED</code>.</div>
+      </div>
+
+      <!-- Google Calendar -->
+      <div>
+        <h4>Google Calendar OAuth</h4>
+        <button id="btnCalStart">POST /integrations/googlecalendar/initiate</button>
+        <div class="muted">Redirect URL</div>
+        <div id="calRedirect" class="mono"></div>
+        <label>connection_id</label>
+        <input id="calConnId" type="text" placeholder="Will be in the response, e.g., con_..." />
+        <button id="btnCalStatus">GET /integrations/googlecalendar/status?connection_id=...</button>
+        <div class="mono" id="calStatusOut"></div>
+      </div>
     </div>
-  </div>
-</fieldset>
 
-<!-- Pomodoro -->
-<fieldset>
-  <legend>Pomodoro</legend>
-  <div class="grid-3">
-    <div><label>Focus minutes</label><input id="focusMin" type="number" value="25"/></div>
-    <div><label>Break minutes</label><input id="breakMin" type="number" value="5"/></div>
-    <div><label>Cycles</label><input id="cycles" type="number" value="3"/></div>
-  </div>
-  <button id="btnStartPom">POST /pomodoro/start</button>
-  <button id="btnStopPom">POST /pomodoro/stop</button>
-</fieldset>
+    <hr />
 
-<!-- Composio: Gmail -->
-<fieldset>
-  <legend>Composio — Gmail Connect</legend>
+    <!-- Canvas LMS + Google Drive -->
+    <div class="row">
+      <!-- Canvas -->
+      <div>
+        <h4>Canvas (LMS) OAuth</h4>
+        <button id="btnCanvasStart">POST /integrations/canvas/initiate</button>
+        <div class="muted">Redirect URL (open in a new window to complete Canvas authorization)</div>
+        <div id="canvasRedirect" class="mono"></div>
+        <label>connection_id</label>
+        <input id="canvasConnId" type="text" placeholder="Will be in the response, e.g., con_..." />
+        <button id="btnCanvasStatus">GET /integrations/canvas/status?connection_id=...</button>
+        <div class="mono" id="canvasStatusOut"></div>
+        <div class="muted">After authorization, status should be <code>CONNECTED</code>.</div>
+      </div>
 
-  <div>
-    <button id="btnComposioHealth">GET /integrations/composio/health</button>
-    <div id="composioHealthOut" class="mono"></div>
-  </div>
-
-  <hr/>
-
-  <div class="row">
-    <div>
-      <h4>1) Start Gmail OAuth</h4>
-      <button id="btnGmailStart">POST /integrations/gmail/initiate</button>
-      <div class="muted">Redirect URL (open in a new window to complete Google authorization)</div>
-      <div id="gmailRedirect" class="mono"></div>
-      <label>connection_id</label>
-      <input id="gmailConnId" type="text" placeholder="Will be in the response, e.g., con_..."/>
+      <!-- Google Drive -->
+      <div>
+        <h4>Google Drive OAuth</h4>
+        <button id="btnDriveStart">POST /integrations/googledrive/initiate</button>
+        <div class="muted">Redirect URL (open to complete Drive authorization)</div>
+        <div id="driveRedirect" class="mono"></div>
+        <label>connection_id</label>
+        <input id="driveConnId" type="text" placeholder="Will be in the response, e.g., con_..." />
+        <button id="btnDriveStatus">GET /integrations/googledrive/status?connection_id=...</button>
+        <div class="mono" id="driveStatusOut"></div>
+        <div class="muted">After authorization, status should be <code>CONNECTED</code>.</div>
+      </div>
     </div>
-    <div>
-      <h4>2) Check connection status</h4>
-      <button id="btnGmailStatus">GET /integrations/gmail/status?connection_id=...</button>
-      <div class="mono" id="gmailStatusOut"></div>
-      <div class="muted">After authorization, the status should be <code>CONNECTED</code>.</div>
-    </div>
-  </div>
-</fieldset>
+  </fieldset>
 
-<script>
-  const $ = (id) => document.getElementById(id);
-  const logEl = $("log");
-  function log(msg, cls="") {
-    const p = document.createElement("div");
-    p.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
-    if (cls) p.className = cls;
-    logEl.appendChild(p); logEl.scrollTop = logEl.scrollHeight;
-  }
-  const api = () => $("baseUrl").value.replace(/\/$/, "");
-  const uid = () => $("userId").value.trim();
-
-  let ws;
-  let currentAccount = null;
-		
-  function wsUrl() {return `${$("baseUrl").value.replace(/\/$/, "")}/ws/events/${encodeURIComponent($("userId").value)}`;}
-		
-  function updateCurrentUser() {
-    const userEl = $("currentUser");
-    const userIdEl = $("userId");
-    if (currentAccount) {
-      userEl.textContent = currentAccount.username;
-      userIdEl.value = currentAccount.username;
-      $("voiceModel").value = currentAccount.voice_model || "";
-    } else {
-      userEl.textContent = "Not logged in";
-      userIdEl.value = "";
-      $("voiceModel").value = "";
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const logEl = $("log");
+    function log(msg, cls = "") {
+      const p = document.createElement("div");
+      p.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+      if (cls) p.className = cls;
+      logEl.appendChild(p);
+      logEl.scrollTop = logEl.scrollHeight;
     }
-  }
-		
-  // Account management functions
-  $("btnRegister").onclick = async () => {
-    const username = $("username").value.trim();
-    const password = $("password").value;
-    if (!username || !password) {
-      $("authOut").textContent = "Please enter username and password";
-      return;
+    const api = () => $("baseUrl").value.replace(/\/$/, "");
+    const uid = () => $("userId").value.trim();
+
+    let ws;
+    let currentAccount = null;
+
+    function wsUrl() { return `${$("baseUrl").value.replace(/\/$/, "")}/ws/events/${encodeURIComponent($("userId").value)}`.replace(/^http/, "ws"); }
+
+    function updateCurrentUser() {
+      const userEl = $("currentUser");
+      const userIdEl = $("userId");
+      if (currentAccount) {
+        userEl.textContent = currentAccount.username;
+        userIdEl.value = currentAccount.username;
+        $("voiceModel").value = currentAccount.voice_model || "";
+      } else {
+        userEl.textContent = "Not logged in";
+        userIdEl.value = "";
+        $("voiceModel").value = "";
+      }
     }
-    $("authOut").textContent = "Registering...";
-    try {
-      const r = await fetch(`${$("baseUrl").value}/accounts/register`, {
-        method: 'POST',
-        headers: {'content-type': 'application/json'},
-        body: JSON.stringify({username, password})
-      });
-      const j = await r.json();
-      if (!r.ok) {
-        $("authOut").textContent = `Error: ${j.error || 'Registration failed'}`;
+
+    // Account management functions
+    $("btnRegister").onclick = async () => {
+      const username = $("username").value.trim();
+      const password = $("password").value;
+      if (!username || !password) {
+        $("authOut").textContent = "Please enter username and password";
         return;
       }
-      currentAccount = j;
-      updateCurrentUser();
-      $("authOut").textContent = `Registered successfully!`;
-      log(`Account registered: ${username}`, "ok");
-    } catch (e) {
-      $("authOut").textContent = "Registration failed";
-      log("Registration error", "err");
-    }
-  };
-		
-  $("btnLogin").onclick = async () => {
-    const username = $("username").value.trim();
-    const password = $("password").value;
-    if (!username || !password) {
-      $("authOut").textContent = "Please enter username and password";
-      return;
-    }
-    $("authOut").textContent = "Logging in...";
-    try {
-      const r = await fetch(`${$("baseUrl").value}/accounts/login`, {
-        method: 'POST',
-        headers: {'content-type': 'application/json'},
-        body: JSON.stringify({username, password})
-      });
-      const j = await r.json();
-      if (!r.ok) {
-        $("authOut").textContent = `Error: ${j.error || 'Login failed'}`;
-        return;
-      }
-      currentAccount = j;
-      updateCurrentUser();
-      $("authOut").textContent = `Logged in as ${username}`;
-      log(`Logged in: ${username}`, "ok");
-    } catch (e) {
-      $("authOut").textContent = "Login failed";
-      log("Login error", "err");
-    }
-  };
-		
-  $("btnLogout").onclick = () => {
-    currentAccount = null;
-    updateCurrentUser();
-    $("authOut").textContent = "Logged out";
-    log("Logged out", "ok");
-  };
-		
-  $("btnUpdateVoice").onclick = async () => {
-    if (!currentAccount) {
-      $("voiceUpdateOut").textContent = "Please log in first";
-      return;
-    }
-    const voiceModel = $("voiceModel").value.trim();
-    if (!voiceModel) {
-      $("voiceUpdateOut").textContent = "Please enter a voice model ID";
-      return;
-    }
-    $("voiceUpdateOut").textContent = "Updating...";
-    try {
-      const r = await fetch(`${$("baseUrl").value}/accounts/${encodeURIComponent(currentAccount.username)}/voice-model`, {
-        method: 'POST',
-        headers: {'content-type': 'application/json'},
-        body: JSON.stringify({voice_model: voiceModel})
-      });
-      const j = await r.json();
-      if (!r.ok) {
-        $("voiceUpdateOut").textContent = `Error: ${j.error || 'Update failed'}`;
-        return;
-      }
-      currentAccount.voice_model = voiceModel;
-      updateCurrentUser();
-      $("voiceUpdateOut").textContent = `Voice model updated to ${voiceModel}`;
-      log(`Voice model updated: ${voiceModel}`, "ok");
-    } catch (e) {
-      $("voiceUpdateOut").textContent = "Update failed";
-      log("Voice model update error", "err");
-    }
-  };
-
-  $("btnWsConnect").onclick = () => {
-    if (!currentAccount) {
-      log("Please log in first to connect WebSocket", "err");
-      return;
-    }
-    if (ws && ws.readyState === WebSocket.OPEN) return;
-    ws = new WebSocket(wsUrl().replace(/^http/, 'ws'));
-    ws.onopen = () => {$("wsState").textContent = "connected"; log("WS open", "ok");};
-    ws.onclose = () => {$("wsState").textContent = "disconnected"; log("WS closed");};
-    ws.onerror = (e) => {log("WS error", "err");};
-    ws.onmessage = (ev) => {
+      $("authOut").textContent = "Registering...";
       try {
-        const data = JSON.parse(ev.data);
-        log(`event: ${data.event} type=${data.type} text=${data.text || ""}`);
-        if (data.type === 'speak' && data.text) {
-          // auto request TTS for the text
-          say(data.text, 'mp3');
+        const r = await fetch(`${$("baseUrl").value}/accounts/register`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ username, password })
+        });
+        const j = await r.json();
+        if (!r.ok) {
+          $("authOut").textContent = `Error: ${j.error || 'Registration failed'}`;
+          return;
         }
-      } catch {log("non-JSON message");}
+        currentAccount = j;
+        updateCurrentUser();
+        $("authOut").textContent = `Registered successfully!`;
+        log(`Account registered: ${username}`, "ok");
+      } catch (e) {
+        $("authOut").textContent = "Registration failed";
+        log("Registration error", "err");
+      }
     };
-  };
-  $("btnWsDisconnect").onclick = () => {if (ws) ws.close();};
 
-  // ---- Health ----
-  $("btnHealth").onclick = async () => {
-    try {
-      const r = await fetch(`${api()}/healthz`);
-      const j = await r.json();
-      $("healthOut").textContent = `ok=${j.ok} voice_backend=${j.voice_backend}`;
-    } catch (e) { $("healthOut").textContent = "error"; }
-  };
-
-  // ---- Personality ----
-  $("btnListPersonalities").onclick = async () => {
-    const container = $("personalitiesOut");
-    container.textContent = 'Loading...';
-    try {
-      const r = await fetch(`${api()}/personalities`);
-      const j = await r.json();
-      while (container.firstChild) container.removeChild(container.firstChild);
-      if (!j.items || !j.items.length) {
-        container.textContent = 'None';
+    $("btnLogin").onclick = async () => {
+      const username = $("username").value.trim();
+      const password = $("password").value;
+      if (!username || !password) {
+        $("authOut").textContent = "Please enter username and password";
         return;
       }
-      j.items.forEach((p) => {
-        const line = document.createElement('div');
-        line.textContent = `${p.id} — ${p.title}`;
-        container.appendChild(line);
-      });
-    } catch (e) {
-      container.textContent = 'error';
-    }
-  };
+      $("authOut").textContent = "Logging in...";
+      try {
+        const r = await fetch(`${$("baseUrl").value}/accounts/login`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ username, password })
+        });
+        const j = await r.json();
+        if (!r.ok) {
+          $("authOut").textContent = `Error: ${j.error || 'Login failed'}`;
+          return;
+        }
+        currentAccount = j;
+        updateCurrentUser();
+        $("authOut").textContent = `Logged in as ${username}`;
+        log(`Logged in: ${username}`, "ok");
+      } catch (e) {
+        $("authOut").textContent = "Login failed";
+        log("Login error", "err");
+      }
+    };
 
-  $("btnSetPersonality").onclick = async () => {
-    if (!currentAccount) {
-      $("personalitySetOut").textContent = 'Please log in first';
-      return;
-    }
-    const personalityId = $("personalityId").value.trim();
-    if (!personalityId) {
-      $("personalitySetOut").textContent = 'enter an id';
-      return;
-    }
-    $("personalitySetOut").textContent = 'Saving...';
-    try {
-      const r = await fetch(`${$("baseUrl").value}/prefs/${encodeURIComponent($("userId").value)}/personality`, {
-        method: 'POST',
-        headers: {'content-type': 'application/json'},
-        body: JSON.stringify({personality_id: personalityId}),
-      });
+    $("btnLogout").onclick = () => {
+      currentAccount = null;
+      updateCurrentUser();
+      $("authOut").textContent = "Logged out";
+      log("Logged out", "ok");
+    };
+
+    $("btnUpdateVoice").onclick = async () => {
+      if (!currentAccount) {
+        $("voiceUpdateOut").textContent = "Please log in first";
+        return;
+      }
+      const voiceModel = $("voiceModel").value.trim();
+      if (!voiceModel) {
+        $("voiceUpdateOut").textContent = "Please enter a voice model ID";
+        return;
+      }
+      $("voiceUpdateOut").textContent = "Updating...";
+      try {
+        const r = await fetch(`${$("baseUrl").value}/accounts/${encodeURIComponent(currentAccount.username)}/voice-model`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ voice_model: voiceModel })
+        });
+        const j = await r.json();
+        if (!r.ok) {
+          $("voiceUpdateOut").textContent = `Error: ${j.error || 'Update failed'}`;
+          return;
+        }
+        currentAccount.voice_model = voiceModel;
+        updateCurrentUser();
+        $("voiceUpdateOut").textContent = `Voice model updated to ${voiceModel}`;
+        log(`Voice model updated: ${voiceModel}`, "ok");
+      } catch (e) {
+        $("voiceUpdateOut").textContent = "Update failed";
+        log("Voice model update error", "err");
+      }
+    };
+
+    $("btnWsConnect").onclick = () => {
+      if (!currentAccount) {
+        log("Please log in first to connect WebSocket", "err");
+        return;
+      }
+      if (ws && ws.readyState === WebSocket.OPEN) return;
+      ws = new WebSocket(wsUrl());
+      ws.onopen = () => { $("wsState").textContent = "connected"; log("WS open", "ok"); };
+      ws.onclose = () => { $("wsState").textContent = "disconnected"; log("WS closed"); };
+      ws.onerror = (e) => { log("WS error", "err"); };
+      ws.onmessage = (ev) => {
+        try {
+          const data = JSON.parse(ev.data);
+          log(`event: ${data.event} type=${data.type} text=${data.text || ""}`);
+          if (data.type === 'speak' && data.text) {
+            // auto request TTS for the text
+            say(data.text, 'mp3');
+          }
+        } catch { log("non-JSON message"); }
+      };
+    };
+    $("btnWsDisconnect").onclick = () => { if (ws) ws.close(); };
+
+    // ---- Health ----
+    $("btnHealth").onclick = async () => {
+      try {
+        const r = await fetch(`${api()}/healthz`);
+        const j = await r.json();
+        $("healthOut").textContent = `ok=${j.ok} voice_backend=${j.voice_backend}`;
+      } catch (e) { $("healthOut").textContent = "error"; }
+    };
+
+    // ---- Personality ----
+    $("btnListPersonalities").onclick = async () => {
+      const container = $("personalitiesOut");
+      container.textContent = 'Loading...';
+      try {
+        const r = await fetch(`${api()}/prefs/personalities`);
+        const j = await r.json();
+        while (container.firstChild) container.removeChild(container.firstChild);
+        if (!j.items || !j.items.length) {
+          container.textContent = 'None';
+          return;
+        }
+        j.items.forEach((p) => {
+          const line = document.createElement('div');
+          line.textContent = `${p.id} — ${p.title}`;
+          container.appendChild(line);
+        });
+      } catch (e) {
+        container.textContent = 'error';
+      }
+    };
+
+    $("btnSetPersonality").onclick = async () => {
+      if (!currentAccount) {
+        $("personalitySetOut").textContent = 'Please log in first';
+        return;
+      }
+      const personalityId = $("personalityId").value.trim();
+      if (!personalityId) {
+        $("personalitySetOut").textContent = 'enter an id';
+        return;
+      }
+      $("personalitySetOut").textContent = 'Saving...';
+      try {
+        const r = await fetch(`${$("baseUrl").value}/prefs/${encodeURIComponent($("userId").value)}/personality`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ personality_id: personalityId }),
+        });
+        const j = await r.json();
+        if (!r.ok) {
+          $("personalitySetOut").textContent = `error: ${j.error || 'unknown'}`;
+          return;
+        }
+        $("personalitySetOut").textContent = `set to ${j.personality.id}`;
+      } catch (e) {
+        $("personalitySetOut").textContent = 'error';
+      }
+    };
+
+    // ---- Chat ----
+    $("btnChatSend").onclick = async () => {
+      if (!currentAccount) {
+        $("chatResp").textContent = "Please log in first";
+        return;
+      }
+      const payload = { user_id: $("userId").value, text: $("chatText").value };
+      const r = await fetch(`${$("baseUrl").value}/chat/send`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload) });
       const j = await r.json();
-      if (!r.ok) {
-        $("personalitySetOut").textContent = `error: ${j.error || 'unknown'}`;
-        return;
-      }
-      $("personalitySetOut").textContent = `set to ${j.personality.id}`;
-    } catch (e) {
-      $("personalitySetOut").textContent = 'error';
-    }
-  };
+      $("chatResp").textContent = `reply: ${j.text} voice_suggested=${j.voice_suggested}`;
+      if (j.voice_suggested && j.text) say(j.text, 'mp3');
+    };
 
-  // ---- Chat ----
-  $("btnChatSend").onclick = async () => {
-    if (!currentAccount) {
-      $("chatResp").textContent = "Please log in first";
-      return;
-    }
-    const payload = {user_id: $("userId").value, text: $("chatText").value};
-    const r = await fetch(`${$("baseUrl").value}/chat/send`, {method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify(payload)});
-    const j = await r.json();
-    $("chatResp").textContent = `reply: ${j.text} voice_suggested=${j.voice_suggested}`;
-    if (j.voice_suggested && j.text) say(j.text, 'mp3');
-  };
-
-  // ---- Voice (TTS/ASR) ----
-  function selectedVoiceId() {
-    const refEl = $("voiceRef");
-    const ref = refEl ? refEl.value.trim() : "";
-    if (ref) return ref;
-    const select = $("voiceSelect");
-    return select && select.value ? select.value : "";
-  }
-
-  async function say(text, format) {
-    const payload = { text, format: format || "mp3" };
-    const referenceId = selectedVoiceId();
-    if (referenceId) payload.reference_id = referenceId;
-    const userId = uid();
-    if (userId) payload.user_id = userId;
-    const r = await fetch(`${api()}/voice/say`, { method: "POST", headers: {"content-type":"application/json"}, body: JSON.stringify(payload) });
-    if (!r.ok || !r.body) { log("TTS failed", "err"); return; }
-    const reader = r.body.getReader(); const chunks = [];
-    while (true) { const {value, done} = await reader.read(); if (done) break; if (value) chunks.push(value); }
-    const blob = new Blob(chunks, { type: (format==="wav"?"audio/wav":"audio/mpeg") });
-    const url = URL.createObjectURL(blob); const audio = $("player"); audio.src = url; audio.play();
-  }
-  $("btnSay").onclick = () => say($("sayText").value, $("sayFormat").value || "mp3");
-
-  $("btnAsr").onclick = async () => {
-    const f = $("asrFile").files[0]; if (!f) { log("pick a file", "err"); return; }
-    const fd = new FormData(); fd.append("file", f);
-    const r = await fetch(`${api()}/voice/asr`, { method: "POST", body: fd });
-    $("asrOut").textContent = JSON.stringify(await r.json());
-  };
-
-  // ---- Pomodoro ----
-  $("btnStartPom").onclick = async () => {
-    if (!currentAccount) {
-      log("Please log in first to start Pomodoro", "err");
-      return;
-    }
-    const payload = {user_id: $("userId").value, focus_min: +$("focusMin").value, break_min: +$("breakMin").value, cycles: +$("cycles").value};
-    const r = await fetch(`${$("baseUrl").value}/pomodoro/start`, {method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify(payload)});
-    log(`pomodoro/start ${r.ok ? 'ok' : 'err'}`);
-  };
-  $("btnStopPom").onclick = async () => {
-    if (!currentAccount) {
-      log("Please log in first to stop Pomodoro", "err");
-      return;
-    }
-    const payload = {user_id: $("userId").value};
-    const r = await fetch(`${$("baseUrl").value}/pomodoro/stop`, {method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify(payload)});
-    log(`pomodoro/stop ${r.ok ? 'ok' : 'err'}`);
-  };
-
-  // ---- Voice Management ----
-  $("btnListVoices").onclick = async () => {
-    const out = $("voiceListOut");
-    const select = $("voiceSelect");
-    if (!select) return;
-    if (out) out.textContent = 'Loading...';
-    try {
-      const r = await fetch(`${api()}/voice/models`);
-      const j = await r.json();
-      if (!r.ok) {
-        if (out) out.textContent = j.error || 'error';
-        return;
-      }
-      while (select.options.length > 1) select.remove(1);
-      if (!j.items || !j.items.length) {
-        if (out) out.textContent = 'No models found (SDK only).';
-        return;
-      }
-      j.items.forEach((m) => {
-        const opt = document.createElement('option');
-        opt.value = m.id;
-        opt.textContent = `${m.title || m.id}`;
-        select.appendChild(opt);
-      });
-      if (out) out.textContent = `Loaded ${j.items.length} models.`;
-    } catch (e) {
-      if (out) out.textContent = 'error';
-    }
-  };
-
-  $("voiceSelect").onchange = () => {
-    const select = $("voiceSelect");
-    if (!select) return;
-    const value = select.value;
-    if (value) {
+    // ---- Voice (TTS/ASR) ----
+    function selectedVoiceId() {
       const refEl = $("voiceRef");
-      if (refEl) refEl.value = value;
+      const ref = refEl ? refEl.value.trim() : "";
+      if (ref) return ref;
+      const select = $("voiceSelect");
+      return select && select.value ? select.value : "";
     }
-  };
 
-  $("btnVoiceOn").onclick = async () => {
-    if (!currentAccount) {
-      $("prefOut").textContent = 'Please log in first';
-      return;
+    async function say(text, format) {
+      const payload = { text, format: format || "mp3" };
+      const referenceId = selectedVoiceId();
+      if (referenceId) payload.reference_id = referenceId;
+      const userId = uid();
+      if (userId) payload.user_id = userId;
+      const r = await fetch(`${api()}/voice/say`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload) });
+      if (!r.ok || !r.body) { log("TTS failed", "err"); return; }
+      const reader = r.body.getReader(); const chunks = [];
+      while (true) { const { value, done } = await reader.read(); if (done) break; if (value) chunks.push(value); }
+      const blob = new Blob(chunks, { type: (format === "wav" ? "audio/wav" : "audio/mpeg") });
+      const url = URL.createObjectURL(blob); const audio = $("player"); audio.src = url; audio.play();
     }
-    const r = await fetch(`${$("baseUrl").value}/prefs/${encodeURIComponent($("userId").value)}/voice`, {
-      method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify({enabled: true})
-    });
-    const j = await r.json();
-    $("prefOut").textContent = JSON.stringify(j);
-  };
-  $("btnVoiceOff").onclick = async () => {
-    if (!currentAccount) {
-      $("prefOut").textContent = 'Please log in first';
-      return;
-    }
-    const r = await fetch(`${$("baseUrl").value}/prefs/${encodeURIComponent($("userId").value)}/voice`, {
-      method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify({enabled: false})
-    });
-    const j = await r.json();
-    $("prefOut").textContent = JSON.stringify(j);
-  };
+    $("btnSay").onclick = () => say($("sayText").value, $("sayFormat").value || "mp3");
 
-  // ---- Composio: health ----
-  $("btnComposioHealth").onclick = async () => {
-    try {
-      const r = await fetch(`${api()}/integrations/composio/health`);
-      $("composioHealthOut").textContent = JSON.stringify(await r.json(), null, 2);
-    } catch (e) {
-      $("composioHealthOut").textContent = "error";
-    }
-  };
+    $("btnAsr").onclick = async () => {
+      const f = $("asrFile").files[0]; if (!f) { log("pick a file", "err"); return; }
+      const fd = new FormData(); fd.append("file", f);
+      const r = await fetch(`${api()}/voice/asr`, { method: "POST", body: fd });
+      $("asrOut").textContent = JSON.stringify(await r.json());
+    };
 
-  // ---- Composio: Gmail ----
-  $("btnGmailStart").onclick = async () => {
-    // If backend receives empty/non-UUID, it will auto-generate a valid UUID
-    const r = await fetch(`${api()}/integrations/gmail/initiate`, {
-      method: "POST", headers: {"content-type":"application/json"},
-      body: JSON.stringify({ user_id: uid() })
-    });
-    const j = await r.json();
-    $("gmailConnId").value = j.connection_id || "";
-    $("gmailRedirect").innerHTML = j.redirect_url
-      ? `<a href="${j.redirect_url}" target="_blank" rel="noopener noreferrer">${j.redirect_url}</a>`
-      : "(no url / check server logs)";
-  };
+    // ---- Pomodoro ----
+    $("btnStartPom").onclick = async () => {
+      if (!currentAccount) {
+        log("Please log in first to start Pomodoro", "err");
+        return;
+      }
+      const payload = { user_id: $("userId").value, focus_min: +$("focusMin").value, break_min: +$("breakMin").value, cycles: +$("cycles").value };
+      const r = await fetch(`${$("baseUrl").value}/pomodoro/start`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload) });
+      log(`pomodoro/start ${r.ok ? 'ok' : 'err'}`);
+    };
+    $("btnStopPom").onclick = async () => {
+      if (!currentAccount) {
+        log("Please log in first to stop Pomodoro", "err");
+        return;
+      }
+      const payload = { user_id: $("userId").value };
+      const r = await fetch(`${$("baseUrl").value}/pomodoro/stop`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload) });
+      log(`pomodoro/stop ${r.ok ? 'ok' : 'err'}`);
+    };
 
-  $("btnGmailStatus").onclick = async () => {
-    const id = $("gmailConnId").value.trim();
-    if (!id) { $("gmailStatusOut").textContent = "enter connection_id"; return; }
-    const r = await fetch(`${api()}/integrations/gmail/status?connection_id=${encodeURIComponent(id)}`);
-    $("gmailStatusOut").textContent = JSON.stringify(await r.json(), null, 2);
-  };
-</script>
+    // ---- Voice Management ----
+    $("btnListVoices").onclick = async () => {
+      const out = $("voiceListOut");
+      const select = $("voiceSelect");
+      if (!select) return;
+      if (out) out.textContent = 'Loading...';
+      try {
+        const r = await fetch(`${api()}/voice/models`);
+        const j = await r.json();
+        if (!r.ok) {
+          if (out) out.textContent = j.error || 'error';
+          return;
+        }
+        while (select.options.length > 1) select.remove(1);
+        if (!j.items || !j.items.length) {
+          if (out) out.textContent = 'No models found (SDK only).';
+          return;
+        }
+        j.items.forEach((m) => {
+          const opt = document.createElement('option');
+          opt.value = m.id;
+          opt.textContent = `${m.title || m.id}`;
+          select.appendChild(opt);
+        });
+        if (out) out.textContent = `Loaded ${j.items.length} models.`;
+      } catch (e) {
+        if (out) out.textContent = 'error';
+      }
+    };
+
+    $("voiceSelect").onchange = () => {
+      const select = $("voiceSelect");
+      if (!select) return;
+      const value = select.value;
+      if (value) {
+        const refEl = $("voiceRef");
+        if (refEl) refEl.value = value;
+      }
+    };
+
+    $("btnVoiceOn").onclick = async () => {
+      if (!currentAccount) {
+        $("prefOut").textContent = 'Please log in first';
+        return;
+      }
+      const r = await fetch(`${$("baseUrl").value}/prefs/${encodeURIComponent($("userId").value)}/voice`, {
+        method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ enabled: true })
+      });
+      const j = await r.json();
+      $("prefOut").textContent = JSON.stringify(j);
+    };
+    $("btnVoiceOff").onclick = async () => {
+      if (!currentAccount) {
+        $("prefOut").textContent = 'Please log in first';
+        return;
+      }
+      const r = await fetch(`${$("baseUrl").value}/prefs/${encodeURIComponent($("userId").value)}/voice`, {
+        method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ enabled: false })
+      });
+      const j = await r.json();
+      $("prefOut").textContent = JSON.stringify(j);
+    };
+
+    // ---- Composio: health ----
+    $("btnComposioHealth").onclick = async () => {
+      try {
+        const r = await fetch(`${api()}/integrations/composio/health`);
+        $("composioHealthOut").textContent = JSON.stringify(await r.json(), null, 2);
+      } catch (e) {
+        $("composioHealthOut").textContent = "error";
+      }
+    };
+
+    // ---- Composio: Gmail ----
+    $("btnGmailStart").onclick = async () => {
+      const r = await fetch(`${api()}/integrations/gmail/initiate`, {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ user_id: uid() })
+      });
+      const j = await r.json();
+      $("gmailConnId").value = j.connection_id || "";
+      $("gmailRedirect").innerHTML = j.redirect_url
+        ? `<a href="${j.redirect_url}" target="_blank" rel="noopener noreferrer">${j.redirect_url}</a>`
+        : "(no url / check server logs)";
+    };
+    $("btnGmailStatus").onclick = async () => {
+      const id = $("gmailConnId").value.trim();
+      if (!id) { $("gmailStatusOut").textContent = "enter connection_id"; return; }
+      const r = await fetch(`${api()}/integrations/gmail/status?connection_id=${encodeURIComponent(id)}`);
+      $("gmailStatusOut").textContent = JSON.stringify(await r.json(), null, 2);
+    };
+
+    // ---- Composio: Google Calendar ----
+    $("btnCalStart").onclick = async () => {
+      const r = await fetch(`${api()}/integrations/googlecalendar/initiate`, {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ user_id: uid() })
+      });
+      const j = await r.json();
+      $("calConnId").value = j.connection_id || "";
+      $("calRedirect").innerHTML = j.redirect_url
+        ? `<a href="${j.redirect_url}" target="_blank" rel="noopener noreferrer">${j.redirect_url}</a>`
+        : "(no url / check server logs)";
+    };
+    $("btnCalStatus").onclick = async () => {
+      const id = $("calConnId").value.trim();
+      if (!id) { $("calStatusOut").textContent = "enter connection_id"; return; }
+      const r = await fetch(`${api()}/integrations/googlecalendar/status?connection_id=${encodeURIComponent(id)}`);
+      $("calStatusOut").textContent = JSON.stringify(await r.json(), null, 2);
+    };
+
+    // ---- Composio: Canvas ----
+    $("btnCanvasStart").onclick = async () => {
+      const r = await fetch(`${api()}/integrations/canvas/initiate`, {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ user_id: uid() })
+      });
+      const j = await r.json();
+      $("canvasConnId").value = j.connection_id || "";
+      $("canvasRedirect").innerHTML = j.redirect_url
+        ? `<a href="${j.redirect_url}" target="_blank" rel="noopener noreferrer">${j.redirect_url}</a>`
+        : "(no url / check server logs)";
+    };
+    $("btnCanvasStatus").onclick = async () => {
+      const id = $("canvasConnId").value.trim();
+      if (!id) { $("canvasStatusOut").textContent = "enter connection_id"; return; }
+      const r = await fetch(`${api()}/integrations/canvas/status?connection_id=${encodeURIComponent(id)}`);
+      $("canvasStatusOut").textContent = JSON.stringify(await r.json(), null, 2);
+    };
+
+    // ---- Composio: Google Drive ----
+    $("btnDriveStart").onclick = async () => {
+      const r = await fetch(`${api()}/integrations/googledrive/initiate`, {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ user_id: uid() })
+      });
+      const j = await r.json();
+      $("driveConnId").value = j.connection_id || "";
+      $("driveRedirect").innerHTML = j.redirect_url
+        ? `<a href="${j.redirect_url}" target="_blank" rel="noopener noreferrer">${j.redirect_url}</a>`
+        : "(no url / check server logs)";
+    };
+    $("btnDriveStatus").onclick = async () => {
+      const id = $("driveConnId").value.trim();
+      if (!id) { $("driveStatusOut").textContent = "enter connection_id"; return; }
+      const r = await fetch(`${api()}/integrations/googledrive/status?connection_id=${encodeURIComponent(id)}`);
+      $("driveStatusOut").textContent = JSON.stringify(await r.json(), null, 2);
+    };
+  </script>
 </body>
+
 </html>
