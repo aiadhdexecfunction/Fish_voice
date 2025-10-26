@@ -132,7 +132,7 @@ export default function DailyTasksTab({
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Left: All Tasks */}
         <div className="animate-fade-in" style={{ animationDelay: '0.1s' }}>
-          <TaskInbox tasks={tasks} onUpdateTask={updateTask} dailyTasks={dailyTasks} setDailyTasks={setDailyTasks} />
+          <TaskInbox tasks={tasks} onUpdateTask={updateTask} dailyTasks={dailyTasks} setDailyTasks={setDailyTasks} setTasks={setTasks} />
         </div>
 
         {/* Right: Pizza Tracker */}

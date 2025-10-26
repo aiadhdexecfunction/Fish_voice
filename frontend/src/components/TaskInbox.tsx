@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import React, { useState } from 'react';
 import { Task } from '../App';
 import { Card } from './ui/card';
 import { Badge } from './ui/badge';
@@ -10,20 +10,34 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from './ui/collapsible';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from './ui/alert-dialog';
+import { toast } from './ui/sonner';
+import { deleteTask as deleteTaskApi } from '../utils/tasksApi';
 
 interface TaskInboxProps {
   tasks: Task[];
   onUpdateTask?: (taskId: string, updates: Partial<Task>) => void;
   dailyTasks?: string[];
   setDailyTasks?: React.Dispatch<React.SetStateAction<string[]>>;
+  setTasks?: React.Dispatch<React.SetStateAction<Task[]>>;
 }
 
-export default function TaskInbox({ tasks, onUpdateTask, dailyTasks, setDailyTasks }: TaskInboxProps) {
+export default function TaskInbox({ tasks, onUpdateTask, dailyTasks, setDailyTasks, setTasks }: TaskInboxProps) {
   const [expandedTasks, setExpandedTasks] = useState<Set<string>>(new Set());
   const [editingSubtask, setEditingSubtask] = useState<string | null>(null);
   const [editValue, setEditValue] = useState('');
   const [addingSubtaskTo, setAddingSubtaskTo] = useState<string | null>(null);
   const [newSubtaskTitle, setNewSubtaskTitle] = useState('');
+  const [taskToDelete, setTaskToDelete] = useState<Task | null>(null);
 
   const toggleTask = (taskId: string) => {
     const newExpanded = new Set(expandedTasks);
@@ -86,6 +100,33 @@ export default function TaskInbox({ tasks, onUpdateTask, dailyTasks, setDailyTas
       if (dailyTasks && setDailyTasks && dailyTasks.includes(subtaskId)) {
         setDailyTasks(prev => prev.filter(id => id !== subtaskId));
       }
+    }
+  };
+
+  const handleDeleteTask = async () => {
+    if (!taskToDelete) return;
+    
+    try {
+      // Try to delete from backend
+      try {
+        await deleteTaskApi(taskToDelete.title);
+      } catch (backendError) {
+        console.error('Backend delete failed:', backendError);
+        // Continue with local delete anyway
+      }
+      
+      // Update local state to remove task
+      if (setTasks) {
+        setTasks(prev => prev.filter(t => t.id !== taskToDelete.id));
+      }
+      
+      toast.success(`Task "${taskToDelete.title}" deleted successfully`);
+      
+      // Close dialog
+      setTaskToDelete(null);
+    } catch (error) {
+      console.error('Failed to delete task:', error);
+      toast.error('Failed to delete task');
     }
   };
 
@@ -185,15 +226,28 @@ export default function TaskInbox({ tasks, onUpdateTask, dailyTasks, setDailyTas
                     }}>
                       {task.title}
                     </h4>
-                    <Badge variant="outline" className="text-xs" style={{
-                      ...getSourceColor(task.source),
-                      borderRadius: '8px',
-                      border: 'none',
-                      fontFamily: 'Inter, sans-serif',
-                      fontWeight: 500
-                    }}>
-                      {getSourceIcon(task.source)}
-                    </Badge>
+                    <div className="flex items-center gap-2">
+                      <Badge variant="outline" className="text-xs" style={{
+                        ...getSourceColor(task.source),
+                        borderRadius: '8px',
+                        border: 'none',
+                        fontFamily: 'Inter, sans-serif',
+                        fontWeight: 500
+                      }}>
+                        {getSourceIcon(task.source)}
+                      </Badge>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 w-8 p-0 hover:bg-red-50"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setTaskToDelete(task);
+                        }}
+                      >
+                        <Trash2 className="size-4" style={{ color: '#E07856' }} />
+                      </Button>
+                    </div>
                   </div>
                   
                   {task.description && (
@@ -345,6 +399,54 @@ export default function TaskInbox({ tasks, onUpdateTask, dailyTasks, setDailyTas
           </div>
         )}
       </div>
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={!!taskToDelete} onOpenChange={(open) => !open && setTaskToDelete(null)}>
+        <AlertDialogContent style={{ 
+          background: '#FFF9F4',
+          borderRadius: '24px',
+          border: '2px solid #F7A64B'
+        }}>
+          <AlertDialogHeader>
+            <AlertDialogTitle style={{ 
+              fontFamily: 'Poppins, sans-serif',
+              color: '#F7A64B',
+              fontSize: '1.25rem'
+            }}>
+              🗑️ Delete Task?
+            </AlertDialogTitle>
+            <AlertDialogDescription style={{ 
+              fontFamily: 'Lexend Deca, sans-serif',
+              color: '#2D2D2D'
+            }}>
+              Are you sure you want to delete "{taskToDelete?.title}"? This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel style={{
+              background: '#FFF9F4',
+              border: '1px solid #E8DDD0',
+              color: '#8B5E3C',
+              borderRadius: '12px',
+              fontFamily: 'Inter, sans-serif'
+            }}>
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={handleDeleteTask}
+              style={{
+                background: '#E07856',
+                color: '#FFFFFF',
+                borderRadius: '12px',
+                fontFamily: 'Inter, sans-serif',
+                fontWeight: 600
+              }}
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Card>
   );
 }
