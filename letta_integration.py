@@ -1,4 +1,6 @@
 from typing import Optional
+import os
+import requests
 from letta_client import Letta  # per your Letta development guidelines
 
 from config import settings
@@ -23,17 +25,37 @@ def create_letta_agent(username: str) -> Optional[str]:
         return None
     try:
         print(f"[DEBUG] Attempting to create Letta agent for {username} using ADHD_Agent template")
-        # Try creating agent with ADHD_Agent template
-        try:
-            agent = letta.templates.agents.create(
-                project="default-project",
-                template_version="ADHD_Agent:latest",
-            )
-            print(f"[DEBUG] Successfully created agent using ADHD_Agent template")
-        except Exception as e:
-            print(f"[DEBUG] Failed to create agent with ADHD_Agent template: {e}")
-            print(f"[DEBUG] Falling back to default model creation")
+        
+        # WORKAROUND: templates.agents.create returns None, so we call the API directly
+        # TODO: Uncomment below and remove direct API call once backend is fixed
+        
+        # try:
+        #     agent = letta.templates.agents.create(
+        #         project="default-project",
+        #         template_version="ADHD_Agent:latest",
+        #     )
+        #     print(f"[DEBUG] Successfully created agent using ADHD_Agent template")
+        # except Exception as e:
+        #     print(f"[DEBUG] Failed to create agent with ADHD_Agent template: {e}")
+        
+        # Direct API call workaround
+        api_key = settings.LETTA_API_KEY or os.getenv("LETTA_API_KEY")
+        if not api_key:
+            print(f"[ERROR] No Letta API key configured")
+            return None
+        
+        url = "https://api.letta.com/v1/templates/default-project/ADHD_Agent%3Alatest/agents"
+        headers = {
+            "Authorization": f"Bearer {api_key}"
+        }
+        
+        print(f"[DEBUG] Calling Letta API directly: {url}")
+        response = requests.post(url, headers=headers)
+        
+        if response.status_code != 201:
+            print(f"[ERROR] API call failed with status {response.status_code}: {response.text}")
             # Fallback to model-based creation if template doesn't work
+            print(f"[DEBUG] Falling back to default model creation")
             model_options = ["openai/o4-mini", "openai/gpt-4o-mini", "gpt-4o-mini", "o4-mini"]
             agent = None
             
@@ -49,15 +71,28 @@ def create_letta_agent(username: str) -> Optional[str]:
             
             if not agent:
                 raise Exception("All model formats failed")
+            
+            agent_id = getattr(agent, "id", None)
+            print(f"[DEBUG] Agent ID extracted from fallback: {agent_id}")
+            return agent_id
         
-        print(f"[DEBUG] Agent created: {agent}")
-        agent_id = getattr(agent, "id", None)
-        print(f"[DEBUG] Agent ID extracted: {agent_id}")
-        if not agent_id:
-            print(f"[WARNING] Failed to create Letta agent for {username} - no ID returned")
+        # Parse response from direct API call
+        data = response.json()
+        print(f"[DEBUG] API response: {data}")
+        
+        # Extract agent ID from the response
+        if "agents" in data and len(data["agents"]) > 0:
+            agent_id = data["agents"][0].get("id")
+            print(f"[DEBUG] Agent ID extracted: {agent_id}")
+            if not agent_id:
+                print(f"[WARNING] Failed to create Letta agent for {username} - no ID in response")
+                return None
+            print(f"[DEBUG] Successfully created Letta agent {agent_id} for {username}")
+            return agent_id
+        else:
+            print(f"[WARNING] No agents in API response")
             return None
-        print(f"[DEBUG] Successfully created Letta agent {agent_id} for {username}")
-        return agent_id
+            
     except Exception as e:
         print(f"[ERROR] Exception creating Letta agent for {username}: {e}")
         import traceback
