@@ -3,6 +3,8 @@ import { Button } from './ui/button';
 import { Label } from './ui/label';
 import { X, Sparkles, Heart, Flame, Zap } from 'lucide-react';
 import { RadioGroup, RadioGroupItem } from './ui/radio-group';
+import { useAuth } from '../contexts/AuthContext';
+import { toast } from './ui/sonner';
 
 interface PersonalityCustomizationProps {
   personality: string;
@@ -19,6 +21,34 @@ export default function PersonalityCustomization({
   setVoiceTone,
   onClose,
 }: PersonalityCustomizationProps) {
+  const { user } = useAuth();
+
+  const handleSave = async () => {
+    if (!user?.username) {
+      toast.error('You must be logged in to save preferences');
+      return;
+    }
+
+    try {
+      const response = await fetch(`http://localhost:8000/prefs/${user.username}/personality`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ personality_id: personality }),
+      });
+
+      if (response.ok) {
+        toast.success('Personality saved successfully! 🎭');
+        onClose();
+      } else {
+        const error = await response.json();
+        toast.error(`Failed to save: ${error.error || 'Unknown error'}`);
+      }
+    } catch (error) {
+      console.error('Failed to save personality:', error);
+      toast.error('Failed to save personality');
+    }
+  };
+
   return (
     <div 
       className="fixed inset-0 z-50 flex items-center justify-center p-4 overflow-y-auto" 
@@ -324,7 +354,7 @@ export default function PersonalityCustomization({
 
         {/* Save Button */}
         <Button
-          onClick={onClose}
+          onClick={handleSave}
           className="w-full mt-6 friendly-button"
           style={{ 
             background: 'linear-gradient(135deg, #F7A64B 0%, #FFB86F 100%)', 

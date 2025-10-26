@@ -117,12 +117,28 @@ function App() {
   const userName = user?.username || 'Guest';
   const [tasksLoading, setTasksLoading] = useState(false);
 
-  // Load tasks from backend when authenticated
+  // Load preferences from backend when authenticated
   useEffect(() => {
     if (isAuthenticated && user?.username) {
-      loadTasks();
+      loadPreferences();
     }
   }, [isAuthenticated, user?.username]);
+
+  const loadPreferences = async () => {
+    if (!user?.username) return;
+    
+    try {
+      const response = await fetch(`http://localhost:8000/prefs/${user.username}`);
+      if (response.ok) {
+        const data = await response.json();
+        if (data.personality?.id) {
+          setPersonality(data.personality.id as 'gentle' | 'funny' | 'pushy');
+        }
+      }
+    } catch (error) {
+      console.error('Failed to load preferences:', error);
+    }
+  };
 
   const loadTasks = async () => {
     setTasksLoading(true);

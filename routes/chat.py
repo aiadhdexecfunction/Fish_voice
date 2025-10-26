@@ -82,23 +82,16 @@ def get_chat_history(
                 limit=limit
             )
             
-            print(f"[DEBUG] Response type: {type(response)}")
-            print(f"[DEBUG] Response: {response}")
-            
             # Check if response is a list or an object with messages attribute
             if isinstance(response, list):
                 message_list = response
             else:
                 message_list = getattr(response, "messages", [])
             
-            print(f"[DEBUG] Message list length: {len(message_list)}")
-            
             messages = []
             for msg in message_list:
                 message_type = getattr(msg, "message_type", "unknown")
                 content = getattr(msg, "content", "")
-                
-                print(f"[DEBUG] Message type: {message_type}, content preview: {content[:100]}...")
                 
                 # Only include user and assistant messages, skip system/reasoning/tool messages
                 if message_type in ["user_message", "assistant_message"]:
@@ -125,8 +118,6 @@ def get_chat_history(
                         "timestamp": getattr(msg, "created_at", None) or getattr(msg, "date", None),
                         "message_type": message_type
                     })
-            
-            print(f"[DEBUG] Filtered messages count: {len(messages)}")
             
             # Sort messages manually based on timestamp
             if order == "desc":
