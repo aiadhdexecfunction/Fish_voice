@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { fetchTasks, createTask, updateTask as updateTaskApi, deleteTask as deleteTaskApi } from './utils/tasksApi';
 import { DndProvider } from 'react-dnd';
 import { HTML5Backend } from 'react-dnd-html5-backend';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './components/ui/tabs';
@@ -107,6 +108,30 @@ function App() {
   const [voiceTone, setVoiceTone] = useState<'ariana' | 'gordon' | 'snoop'>('ariana');
   
   const userName = user?.username || 'Guest';
+  const [tasksLoading, setTasksLoading] = useState(false);
+
+  // Load tasks from backend when authenticated
+  useEffect(() => {
+    if (isAuthenticated && user?.username) {
+      loadTasks();
+    }
+  }, [isAuthenticated, user?.username]);
+
+  const loadTasks = async () => {
+    setTasksLoading(true);
+    try {
+      const fetchedTasks = await fetchTasks();
+      if (fetchedTasks.length > 0) {
+        setTasks(fetchedTasks);
+      }
+      // If no tasks from backend, keep the mock data
+    } catch (error) {
+      console.error('Failed to load tasks:', error);
+      // Keep using local mock data if fetch fails
+    } finally {
+      setTasksLoading(false);
+    }
+  };
 
   // Get time-based greeting
   const getGreeting = () => {

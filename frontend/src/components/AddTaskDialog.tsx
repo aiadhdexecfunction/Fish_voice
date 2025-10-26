@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import React, { useState } from 'react';
 import { Task, Subtask } from '../App';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
@@ -10,8 +10,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from './ui/dialog';
-import { toast } from 'sonner@2.0.3';
+import { toast } from './ui/sonner';
 import { Sparkles, Calendar } from 'lucide-react';
+import { createTask as createTaskApi } from '../utils/tasksApi';
 
 interface AddTaskDialogProps {
   open: boolean;
@@ -29,6 +30,7 @@ export default function AddTaskDialog({
   taskTitle,
 }: AddTaskDialogProps) {
   const [deadline, setDeadline] = useState('');
+  const [isCreating, setIsCreating] = useState(false);
 
   const generateSubtasks = (title: string): Subtask[] => {
     const keywords = title.toLowerCase();
@@ -68,32 +70,49 @@ export default function AddTaskDialog({
     return subtasks;
   };
 
-  const handleAddTask = () => {
+  const handleAddTask = async () => {
     if (!taskTitle.trim()) return;
+    setIsCreating(true);
 
-    const maxOrder = Math.max(
-      -1,
-      ...tasks
-        .filter(t => t.orderInCaterpillar !== undefined)
-        .map(t => t.orderInCaterpillar || 0)
-    );
+    try {
+      const maxOrder = Math.max(
+        -1,
+        ...tasks
+          .filter(t => t.orderInCaterpillar !== undefined)
+          .map(t => t.orderInCaterpillar || 0)
+      );
 
-    const newTask: Task = {
-      id: Date.now().toString(),
-      title: taskTitle,
-      urgency: 50,
-      importance: 50,
-      deadline: deadline ? new Date(deadline) : undefined,
-      subtasks: generateSubtasks(taskTitle),
-      source: 'manual',
-      position: { x: 50, y: 50 },
-      orderInCaterpillar: maxOrder + 1,
-    };
+      const newTask: Task = {
+        id: Date.now().toString(),
+        title: taskTitle,
+        urgency: 50,
+        importance: 50,
+        deadline: deadline ? new Date(deadline) : undefined,
+        subtasks: generateSubtasks(taskTitle),
+        source: 'manual',
+        position: { x: 50, y: 50 },
+        orderInCaterpillar: maxOrder + 1,
+      };
 
-    setTasks([...tasks, newTask]);
-    toast.success(`✅ Task added: ${taskTitle}`);
-    setDeadline('');
-    onOpenChange(false);
+      // Try to save to backend
+      try {
+        await createTaskApi(newTask);
+      } catch (backendError) {
+        console.error('Backend save failed, keeping local:', backendError);
+        // Continue anyway - task is saved locally
+      }
+
+      // Update local state
+      setTasks([...tasks, newTask]);
+      toast.success(`✅ Task added: ${taskTitle}`);
+      setDeadline('');
+      onOpenChange(false);
+    } catch (error) {
+      console.error('Failed to add task:', error);
+      toast.error('Failed to add task. Please try again.');
+    } finally {
+      setIsCreating(false);
+    }
   };
 
   return (
@@ -197,17 +216,19 @@ export default function AddTaskDialog({
             </Button>
             <Button
               onClick={handleAddTask}
+              disabled={isCreating}
               className="flex-1 h-12 friendly-button"
               style={{ 
                 background: 'linear-gradient(135deg, #F7A64B 0%, #FFB86F 100%)',
                 color: '#FFFFFF',
                 borderRadius: '12px',
                 fontFamily: 'Inter, sans-serif',
-                fontWeight: 600
+                fontWeight: 600,
+                opacity: isCreating ? 0.7 : 1
               }}
             >
               <Sparkles className="size-4 mr-2" />
-              Add Task
+              {isCreating ? 'Adding...' : 'Add Task'}
             </Button>
           </div>
         </div>
