@@ -101,8 +101,15 @@ function App() {
   const [dailyTasks, setDailyTasks] = useState<string[]>([]); // Subtask IDs for today
   const [sessionNotes, setSessionNotes] = useState<SessionNote[]>([]);
   const [showRegister, setShowRegister] = useState(false);
-  const [showIntro, setShowIntro] = useState(true); // Show tutorial on first visit
   const { user, isAuthenticated, logout, loading } = useAuth();
+  
+  // Check if intro was already shown (from localStorage)
+  const [showIntro, setShowIntro] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return !localStorage.getItem('introCompleted');
+    }
+    return true;
+  });
   const [showPersonalityCustomization, setShowPersonalityCustomization] = useState(false);
   const [personality, setPersonality] = useState<'gentle' | 'funny' | 'pushy'>('gentle');
   const [voiceTone, setVoiceTone] = useState<'ariana' | 'gordon' | 'snoop'>('ariana');
@@ -303,7 +310,14 @@ function App() {
         </div>
         
         {/* Intro Tutorial */}
-        {showIntro && <IntroTutorial onClose={() => setShowIntro(false)} />}
+        {showIntro && (
+          <IntroTutorial 
+            onClose={() => {
+              setShowIntro(false);
+              localStorage.setItem('introCompleted', 'true');
+            }} 
+          />
+        )}
         
         {/* Personality Customization */}
         {showPersonalityCustomization && (
