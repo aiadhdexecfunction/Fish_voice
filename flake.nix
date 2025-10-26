@@ -20,6 +20,7 @@
             pkgs.pkg-config
             pkgs.openssl
             pkgs.zlib
+            pkgs.sqlite
             pkgs.gcc
           ];
 
@@ -41,7 +42,11 @@
               fi
             fi
 
-            echo "venv active. Run: uvicorn app:app --reload"
+            : "${ACCOUNTS_DB_PATH:=${PWD}/accounts.db}"
+            export ACCOUNTS_DB_PATH
+
+            echo "venv active. Run: uvicorn app:app --reload --port 8001"
+            echo "SQLite DB: $ACCOUNTS_DB_PATH"
           '';
         };
       });
