@@ -1,5 +1,10 @@
 import os
 import asyncio
+import hashlib
+import hmac
+import secrets
+import sqlite3
+from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from enum import Enum
 from typing import Dict, Optional, Set
@@ -210,15 +215,166 @@ def fish_asr(audio_bytes: bytes, language: str = "en"):
 
 # ===================== Letta client =====================
 if settings.LETTA_BASE_URL:
-    letta = Letta(base_url=settings.LETTA_BASE_URL)
-else:
+    letta: Optional[Letta] = Letta(base_url=settings.LETTA_BASE_URL)
+elif settings.LETTA_API_KEY:
     letta = Letta(token=settings.LETTA_API_KEY)
+else:
+    letta = None
 
-def letta_generate_single(content: str, personality: Optional[Personality] = None) -> str:
+# ===================== Account storage =====================
+DB_PATH = os.getenv("ACCOUNTS_DB_PATH", os.path.join(os.path.dirname(__file__), "accounts.db"))
+PBKDF2_ITERATIONS = 100_000
+
+
+@contextmanager
+def db_connection() -> sqlite3.Connection:
+    conn = sqlite3.connect(DB_PATH, timeout=30)
+    conn.row_factory = sqlite3.Row
+    try:
+        yield conn
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def init_db() -> None:
+    with db_connection() as conn:
+        # Check if table exists and has the old schema
+        cursor = conn.execute("PRAGMA table_info(accounts)")
+        columns = [row[1] for row in cursor.fetchall()]
+        
+        if columns:  # Table exists
+            # Check if letta_agent_id has NOT NULL constraint by trying to insert NULL
+            try:
+                conn.execute("INSERT INTO accounts (username, password_hash, letta_agent_id, created_at) VALUES (?, ?, ?, ?)", 
+                           ("_test_migration", "dummy", None, "2024-01-01T00:00:00Z"))
+                conn.execute("DELETE FROM accounts WHERE username = '_test_migration'")
+            except sqlite3.IntegrityError:
+                # Old schema with NOT NULL constraint - recreate table
+                print("[INFO] Migrating accounts table to allow NULL letta_agent_id")
+                conn.execute("CREATE TABLE accounts_new AS SELECT * FROM accounts")
+                conn.execute("DROP TABLE accounts")
+                conn.execute("ALTER TABLE accounts_new RENAME TO accounts")
+        
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS accounts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT UNIQUE NOT NULL,
+                password_hash TEXT NOT NULL,
+                voice_model TEXT,
+                letta_agent_id TEXT,
+                created_at TEXT NOT NULL
+            )
+            """
+        )
+
+
+def hash_password(password: str) -> str:
+    salt = secrets.token_bytes(16)
+    hashed = hashlib.pbkdf2_hmac(
+        "sha256", password.encode("utf-8"), salt, PBKDF2_ITERATIONS
+    )
+    return f"{salt.hex()}:{hashed.hex()}"
+
+
+def verify_password(password: str, stored_hash: str) -> bool:
+    try:
+        salt_hex, hash_hex = stored_hash.split(":", 1)
+    except ValueError:
+        return False
+    salt = bytes.fromhex(salt_hex)
+    expected = bytes.fromhex(hash_hex)
+    candidate = hashlib.pbkdf2_hmac(
+        "sha256", password.encode("utf-8"), salt, PBKDF2_ITERATIONS
+    )
+    return hmac.compare_digest(candidate, expected)
+
+
+def get_account(username: str) -> Optional[Dict[str, Optional[str]]]:
+    with db_connection() as conn:
+        row = conn.execute(
+            "SELECT username, password_hash, voice_model, letta_agent_id FROM accounts WHERE username = ?",
+            (username,),
+        ).fetchone()
+        if not row:
+            return None
+        return dict(row)
+
+
+def create_letta_agent(username: str) -> Optional[str]:
+    print(f"[DEBUG] create_letta_agent called for {username}, letta configured: {letta is not None}")
+    if not letta:
+        print(f"[WARNING] Letta is not configured, skipping agent creation for {username}")
+        return None
+    try:
+        print(f"[DEBUG] Attempting to create Letta agent for {username}")
+        # Try different model formats that Letta might expect
+        model_options = ["openai/o4-mini", "openai/gpt-4o-mini", "gpt-4o-mini", "o4-mini"]
+        agent = None
+        
+        for model in model_options:
+            try:
+                print(f"[DEBUG] Trying model: {model}")
+                agent = letta.agents.create(name=f"{username}-agent", model=model)
+                print(f"[DEBUG] Success with model: {model}")
+                break
+            except Exception as e:
+                print(f"[DEBUG] Failed with model {model}: {e}")
+                continue
+        
+        if not agent:
+            raise Exception("All model formats failed")
+        print(f"[DEBUG] Agent created: {agent}")
+        agent_id = getattr(agent, "id", None)
+        print(f"[DEBUG] Agent ID extracted: {agent_id}")
+        if not agent_id:
+            print(f"[WARNING] Failed to create Letta agent for {username} - no ID returned")
+            return None
+        print(f"[DEBUG] Successfully created Letta agent {agent_id} for {username}")
+        return agent_id
+    except Exception as e:
+        print(f"[ERROR] Exception creating Letta agent for {username}: {e}")
+        import traceback
+        traceback.print_exc()
+        return None
+
+
+def store_account(username: str, password: str, voice_model: Optional[str]) -> Dict[str, Optional[str]]:
+    agent_id = create_letta_agent(username)
+    password_hash = hash_password(password)
+    created_at = datetime.now(timezone.utc).isoformat()
+    preferred_voice = voice_model or settings.FISH_VOICE_REFERENCE_ID
+    try:
+        with db_connection() as conn:
+            conn.execute(
+                "INSERT INTO accounts (username, password_hash, voice_model, letta_agent_id, created_at) VALUES (?, ?, ?, ?, ?)",
+                (username, password_hash, preferred_voice, agent_id, created_at),
+            )
+    except sqlite3.IntegrityError:
+        if letta and agent_id:
+            try:
+                letta.agents.delete(agent_id)
+            except Exception:
+                pass
+        raise
+    user_prefs.setdefault(username, UserPrefs())
+    return {"username": username, "voice_model": preferred_voice, "letta_agent_id": agent_id}
+
+
+init_db()
+
+def letta_generate_single(
+    content: str,
+    personality: Optional[Personality] = None,
+    agent_id: Optional[str] = None,
+) -> str:
     """
     Send a single user message to Letta, return the assistant's text (STATEFUL pattern).
     """
-    if not settings.LETTA_AGENT_ID:
+    print(f"[DEBUG] letta_generate_single called: agent_id={agent_id}, letta={letta is not None}")
+    if not agent_id or not letta:
+        print(f"[DEBUG] Returning empty string - agent_id: {agent_id}, letta: {letta is not None}")
         return ""  # allow fallback upstream
     prompt = content
     if personality:
@@ -230,7 +386,7 @@ def letta_generate_single(content: str, personality: Optional[Personality] = Non
             f"{instruction}\n\nUser message: {content}\nAssistant:"
         )
     resp = letta.agents.messages.create(
-        agent_id=settings.LETTA_AGENT_ID,
+        agent_id=agent_id,
         messages=[{"role": "user", "content": prompt}],
     )
     for msg in getattr(resp, "messages", []):
@@ -254,9 +410,13 @@ class SayIn(BaseModel):
 def voice_say(payload: SayIn):
     reference_id = payload.reference_id
     if not reference_id and payload.user_id:
-        prefs = user_prefs.get(payload.user_id, UserPrefs())
-        personality = get_personality(prefs.personality_id)
-        reference_id = personality.voice_reference_id
+        account = get_account(payload.user_id)
+        if account and account.get("voice_model"):
+            reference_id = account["voice_model"]
+        else:
+            prefs = user_prefs.get(payload.user_id, UserPrefs())
+            personality = get_personality(prefs.personality_id)
+            reference_id = personality.voice_reference_id
     gen = fish_tts_stream(
         text=payload.text,
         fmt=payload.format or "mp3",
@@ -350,6 +510,7 @@ user_prefs: Dict[str, UserPrefs] = {}
 def get_prefs(user_id: str):
     prefs = user_prefs.get(user_id, UserPrefs())
     personality = get_personality(prefs.personality_id)
+    account = get_account(user_id)
     return {
         "user_id": user_id,
         "voice_enabled": prefs.voice_enabled,
@@ -358,6 +519,7 @@ def get_prefs(user_id: str):
             "title": personality.title,
             "description": personality.description,
         },
+        "voice_model": account.get("voice_model") if account else None,
     }
 
 class VoiceToggleIn(BaseModel):
@@ -469,6 +631,82 @@ class ChatIn(BaseModel):
     user_id: str
     text: str
 
+
+class AccountCreateIn(BaseModel):
+    username: str
+    password: str
+    voice_model: Optional[str] = None
+
+
+class AccountLoginIn(BaseModel):
+    username: str
+    password: str
+
+
+class VoiceModelUpdateIn(BaseModel):
+    voice_model: str
+
+
+@app.post("/accounts/register")
+def register_account(payload: AccountCreateIn):
+    username = payload.username.strip()
+    if not username or not payload.password:
+        return JSONResponse({"error": "invalid_credentials"}, status_code=400)
+    if get_account(username):
+        return JSONResponse({"error": "username_taken"}, status_code=409)
+    try:
+        account = store_account(username, payload.password, payload.voice_model)
+    except sqlite3.IntegrityError:
+        return JSONResponse({"error": "username_taken"}, status_code=409)
+    except Exception as exc:
+        return JSONResponse({"error": "account_creation_failed", "detail": str(exc)}, status_code=500)
+    return {"ok": True, **account}
+
+
+@app.post("/accounts/login")
+def login_account(payload: AccountLoginIn):
+    username = payload.username.strip()
+    if not username or not payload.password:
+        return JSONResponse({"error": "invalid_credentials"}, status_code=400)
+    account = get_account(username)
+    if not account or not verify_password(payload.password, account["password_hash"]):
+        return JSONResponse({"error": "invalid_credentials"}, status_code=401)
+    user_prefs.setdefault(username, UserPrefs())
+    return {
+        "ok": True,
+        "username": account["username"],
+        "voice_model": account.get("voice_model"),
+        "letta_agent_id": account.get("letta_agent_id"),
+    }
+
+
+@app.get("/accounts/{username}")
+def get_account_details(username: str):
+    account = get_account(username)
+    if not account:
+        return JSONResponse({"error": "not_found"}, status_code=404)
+    return {
+        "username": account["username"],
+        "voice_model": account.get("voice_model"),
+        "letta_agent_id": account.get("letta_agent_id"),
+    }
+
+
+@app.post("/accounts/{username}/voice-model")
+def update_voice_model(username: str, payload: VoiceModelUpdateIn):
+    account = get_account(username)
+    if not account:
+        return JSONResponse({"error": "not_found"}, status_code=404)
+    voice_model = payload.voice_model.strip()
+    if not voice_model:
+        return JSONResponse({"error": "invalid_voice_model"}, status_code=400)
+    with db_connection() as conn:
+        conn.execute(
+            "UPDATE accounts SET voice_model = ? WHERE username = ?",
+            (voice_model, username),
+        )
+    return {"ok": True, "username": username, "voice_model": voice_model}
+
 # Track “awaiting user reply” deadlines
 awaiting_reply: Dict[str, datetime] = {}
 
@@ -479,30 +717,120 @@ def cancel_followup(user_id: str):
     if user_id in awaiting_reply:
         awaiting_reply.pop(user_id, None)
 
+def generate_fallback_response(user_text: str, personality: Personality) -> str:
+    """Generate varied fallback responses when Letta is unavailable."""
+    import random
+    
+    # Simple keyword-based responses
+    user_lower = user_text.lower()
+    
+    responses = []
+    
+    if any(word in user_lower for word in ["hello", "hi", "hey", "good morning", "good afternoon"]):
+        responses = [
+            "Hey there! Ready to tackle something today?",
+            "Hi! What's on your mind?",
+            "Hello! How can I help you stay focused?",
+            "Hey! What's your priority right now?"
+        ]
+    elif any(word in user_lower for word in ["help", "stuck", "confused", "don't know"]):
+        responses = [
+            "Let's break this down into smaller pieces.",
+            "What's the smallest step you can take right now?",
+            "I'm here to help! What's feeling overwhelming?",
+            "Let's tackle this one piece at a time."
+        ]
+    elif any(word in user_lower for word in ["tired", "exhausted", "burned out"]):
+        responses = [
+            "Take a moment to breathe. You're doing great.",
+            "Rest is productive too. What would help you recharge?",
+            "It's okay to slow down. What's one tiny thing you can do?",
+            "You've been working hard. How about a short break?"
+        ]
+    elif any(word in user_lower for word in ["done", "finished", "completed", "accomplished"]):
+        responses = [
+            "Awesome! That's a win worth celebrating.",
+            "Great job! What's next on your list?",
+            "You did it! How does that feel?",
+            "Nice work! Ready for the next challenge?"
+        ]
+    elif any(word in user_lower for word in ["focus", "concentrate", "work", "study"]):
+        responses = [
+            "Let's set up a focused work session.",
+            "What's your main goal for this focus time?",
+            "Ready to dive in? What's your first step?",
+            "Let's create some momentum together."
+        ]
+    else:
+        # Generic encouraging responses
+        responses = [
+            "I'm listening! Tell me more about what's on your mind.",
+            "What's the most important thing right now?",
+            "How can I support you today?",
+            "What would help you feel more confident?",
+            "Let's figure this out together.",
+            "What's your next small step?"
+        ]
+    
+    chosen_response = random.choice(responses)
+    return apply_personality_text(personality, chosen_response)
+
+def ensure_user_has_agent(user_id: str) -> Optional[str]:
+    """Ensure user has a Letta agent, create one if needed."""
+    account = get_account(user_id)
+    if not account:
+        return None
+    
+    agent_id = account.get("letta_agent_id")
+    if agent_id:
+        return agent_id
+    
+    # User doesn't have an agent, try to create one
+    print(f"[DEBUG] User {user_id} has no agent, attempting to create one")
+    new_agent_id = create_letta_agent(user_id)
+    
+    if new_agent_id:
+        # Update the account with the new agent ID
+        with db_connection() as conn:
+            conn.execute(
+                "UPDATE accounts SET letta_agent_id = ? WHERE username = ?",
+                (new_agent_id, user_id)
+            )
+        print(f"[DEBUG] Updated account {user_id} with agent ID {new_agent_id}")
+        return new_agent_id
+    else:
+        print(f"[DEBUG] Failed to create agent for {user_id}")
+        return None
+
 @app.post("/chat/send")
 def chat_send(payload: ChatIn):
     """
     When the user speaks:
       1) cancel any pending follow-up,
-      2) ask Letta for a single reply,
-      3) schedule a new one-shot follow-up if the user doesn't reply in time.
+      2) ensure user has a Letta agent (create if needed),
+      3) ask Letta for a single reply,
+      4) schedule a new one-shot follow-up if the user doesn't reply in time.
     """
     cancel_followup(payload.user_id)
 
     prefs = user_prefs.get(payload.user_id, UserPrefs())
     personality = get_personality(prefs.personality_id)
+    
+    # Ensure user has an agent (create if needed)
+    agent_id = ensure_user_has_agent(payload.user_id)
+    account = get_account(payload.user_id)
 
     # Ask Letta for a short English reply (fallback if Letta unavailable).
     prompt = payload.text.strip()
     reply = ""
     if prompt:
-        reply = letta_generate_single(prompt, personality=personality) or ""
+        reply = letta_generate_single(prompt, personality=personality, agent_id=agent_id) or ""
+        print(f"[DEBUG] Letta response: '{reply}', agent_id: {agent_id}, letta_configured: {letta is not None}")
 
     if not reply:
-        reply = apply_personality_text(
-            personality,
-            "Got it—I’m here. Want me to break that into three small steps?",
-        )
+        print(f"[DEBUG] Using fallback response for: '{prompt}'")
+        reply = generate_fallback_response(prompt, personality)
+        print(f"[DEBUG] Fallback response: '{reply}'")
 
     # One-shot follow-up timer
     schedule_followup(payload.user_id, settings.FOLLOWUP_DELAY_SEC)
@@ -512,6 +840,7 @@ def chat_send(payload: ChatIn):
         "text": reply,
         "voice_suggested": bool(prefs.voice_enabled),
         "personality": personality.id,
+        "voice_model": account.get("voice_model") if account else None,
     }
 
 # ===================== Copy generation & Orchestrator =====================
@@ -537,7 +866,11 @@ async def generate_text_for_event(event: Event) -> str:
     prefs = user_prefs.get(event.user_id, UserPrefs())
     personality = get_personality(prefs.personality_id)
 
-    if not settings.LETTA_AGENT_ID:
+    # Ensure user has an agent (create if needed)
+    agent_id = ensure_user_has_agent(event.user_id)
+    account = get_account(event.user_id)
+
+    if not agent_id:
         return fallback_text_for(event, personality)
 
     if event.type == EventType.REMINDER_DUE:
@@ -577,7 +910,7 @@ async def generate_text_for_event(event: Event) -> str:
     else:
         return fallback_text_for(event, personality)
 
-    text = letta_generate_single(prompt, personality=personality).strip()
+    text = letta_generate_single(prompt, personality=personality, agent_id=agent_id).strip()
     return text or fallback_text_for(event, personality)
 
 async def voice_orchestrator():
@@ -591,7 +924,13 @@ async def voice_orchestrator():
         try:
             prefs = user_prefs.get(event.user_id, UserPrefs())
             personality = get_personality(prefs.personality_id)
+            account = get_account(event.user_id)
             text = await generate_text_for_event(event)
+            voice_reference = None
+            if account and account.get("voice_model"):
+                voice_reference = account["voice_model"]
+            else:
+                voice_reference = personality.voice_reference_id
             msg_type = "speak" if prefs.voice_enabled else "chat"
             await ws_manager.send_json(event.user_id, {
                 "type": msg_type,
@@ -599,18 +938,24 @@ async def voice_orchestrator():
                 "text": text,
                 "data": event.data,
                 "personality": personality.id,
-                "voice_reference_id": personality.voice_reference_id,
+                "voice_reference_id": voice_reference,
             })
         except Exception as e:
             prefs = user_prefs.get(event.user_id, UserPrefs())
             personality = get_personality(prefs.personality_id)
+            account = get_account(event.user_id)
+            voice_reference = None
+            if account and account.get("voice_model"):
+                voice_reference = account["voice_model"]
+            else:
+                voice_reference = personality.voice_reference_id
             await ws_manager.send_json(event.user_id, {
                 "type": "chat", "event": event.type.value,
                 "text": fallback_text_for(event, personality),
                 "data": event.data,
                 "error": str(e),
                 "personality": personality.id,
-                "voice_reference_id": personality.voice_reference_id,
+                "voice_reference_id": voice_reference,
             })
         finally:
             event_queue.task_done()
