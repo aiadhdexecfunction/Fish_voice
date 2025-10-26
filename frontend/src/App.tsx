@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { fetchTasks, createTask, updateTask as updateTaskApi, deleteTask as deleteTaskApi } from './utils/tasksApi';
 import { getVoiceToneFromModelId, VoiceTone } from './utils/voiceMapping';
+import { saveDailyTasks, loadDailyTasks } from './utils/cookieStorage';
 import { DndProvider } from 'react-dnd';
 import { HTML5Backend } from 'react-dnd-html5-backend';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './components/ui/tabs';
@@ -46,59 +47,7 @@ export interface SessionNote {
 }
 
 function App() {
-  const [tasks, setTasks] = useState<Task[]>([
-    {
-      id: '1',
-      title: 'Complete Math Assignment',
-      description: 'Chapter 5 problems',
-      urgency: 80,
-      importance: 90,
-      deadline: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000),
-      source: 'canvas',
-      subtasks: [
-        { id: '1-1', title: 'Read Chapter 5', completed: false },
-        { id: '1-2', title: 'Solve problems 1-10', completed: false },
-        { id: '1-3', title: 'Review answers', completed: false },
-      ],
-      position: { x: 75, y: 85 },
-      orderInCaterpillar: 0,
-    },
-    {
-      id: '2',
-      title: 'Study for Biology Quiz',
-      description: 'Cell division and genetics',
-      urgency: 60,
-      importance: 70,
-      deadline: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000),
-      source: 'gmail',
-      subtasks: [
-        { id: '2-1', title: 'Review lecture notes', completed: false },
-        { id: '2-2', title: 'Make flashcards', completed: false },
-        { id: '2-3', title: 'Practice quiz questions', completed: false },
-        { id: '2-4', title: 'Study with group', completed: false },
-      ],
-      position: { x: 55, y: 65 },
-      orderInCaterpillar: 1,
-    },
-    {
-      id: '3',
-      title: 'Write English Essay',
-      description: 'Analysis of Shakespeare',
-      urgency: 40,
-      importance: 85,
-      deadline: new Date(Date.now() + 10 * 24 * 60 * 60 * 1000),
-      source: 'manual',
-      subtasks: [
-        { id: '3-1', title: 'Research and outline', completed: false },
-        { id: '3-2', title: 'Write first draft', completed: false },
-        { id: '3-3', title: 'Revise and edit', completed: false },
-        { id: '3-4', title: 'Final proofread', completed: false },
-        { id: '3-5', title: 'Submit', completed: false },
-      ],
-      position: { x: 35, y: 80 },
-      orderInCaterpillar: 2,
-    },
-  ]);
+  const [tasks, setTasks] = useState<Task[]>([]);
 
   const [dailyTasks, setDailyTasks] = useState<string[]>([]); // Subtask IDs for today
   const [sessionNotes, setSessionNotes] = useState<SessionNote[]>([]);
@@ -143,21 +92,74 @@ function App() {
   }, [user?.username]);
 
   const loadTasks = useCallback(async () => {
-    if (!user?.username) return;
+    if (!user?.username) {
+      console.log('No username, skipping task load');
+      return;
+    }
     
+    console.log('Loading tasks for user:', user.username);
     setTasksLoading(true);
     try {
       const fetchedTasks = await fetchTasks();
       console.log('Fetched tasks:', fetchedTasks);
-      if (fetchedTasks && fetchedTasks.length > 0) {
-        setTasks(fetchedTasks);
-      } else {
-        console.log('No tasks found from API, using empty array');
-        setTasks([]);
-      }
+      setTasks(fetchedTasks || []);
     } catch (error) {
       console.error('Failed to load tasks:', error);
-      // Keep using local mock data if fetch fails
+      // Fallback to mock data if backend fails
+      console.log('Using fallback mock data');
+      setTasks([
+        {
+          id: '1',
+          title: 'Complete Math Assignment',
+          description: 'Chapter 5 problems',
+          urgency: 80,
+          importance: 90,
+          deadline: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000),
+          source: 'canvas',
+          subtasks: [
+            { id: '1-1', title: 'Read Chapter 5', completed: false },
+            { id: '1-2', title: 'Solve problems 1-10', completed: false },
+            { id: '1-3', title: 'Review answers', completed: false },
+          ],
+          position: { x: 75, y: 85 },
+          orderInCaterpillar: 0,
+        },
+        {
+          id: '2',
+          title: 'Study for Biology Quiz',
+          description: 'Cell division and genetics',
+          urgency: 60,
+          importance: 70,
+          deadline: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000),
+          source: 'gmail',
+          subtasks: [
+            { id: '2-1', title: 'Review lecture notes', completed: false },
+            { id: '2-2', title: 'Make flashcards', completed: false },
+            { id: '2-3', title: 'Practice quiz questions', completed: false },
+            { id: '2-4', title: 'Study with group', completed: false },
+          ],
+          position: { x: 55, y: 65 },
+          orderInCaterpillar: 1,
+        },
+        {
+          id: '3',
+          title: 'Write English Essay',
+          description: 'Analysis of Shakespeare',
+          urgency: 40,
+          importance: 85,
+          deadline: new Date(Date.now() + 10 * 24 * 60 * 60 * 1000),
+          source: 'manual',
+          subtasks: [
+            { id: '3-1', title: 'Research and outline', completed: false },
+            { id: '3-2', title: 'Write first draft', completed: false },
+            { id: '3-3', title: 'Revise and edit', completed: false },
+            { id: '3-4', title: 'Final proofread', completed: false },
+            { id: '3-5', title: 'Submit', completed: false },
+          ],
+          position: { x: 35, y: 80 },
+          orderInCaterpillar: 2,
+        },
+      ]);
     } finally {
       setTasksLoading(false);
     }
@@ -170,6 +172,21 @@ function App() {
       loadTasks();
     }
   }, [isAuthenticated, user?.username, loadPreferences, loadTasks]);
+
+  // Load daily tasks from cookie on mount
+  useEffect(() => {
+    const savedTasks = loadDailyTasks();
+    if (savedTasks && savedTasks.length > 0) {
+      setDailyTasks(savedTasks);
+    }
+  }, []); // Only run on mount
+
+  // Save daily tasks to cookie whenever dailyTasks changes
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      saveDailyTasks(dailyTasks);
+    }
+  }, [dailyTasks]);
 
   // Get time-based greeting
   const getGreeting = () => {

@@ -42,8 +42,12 @@ function frontendToBackend(task: Task): { name: string; description: string; sub
 
 export async function fetchTasks(): Promise<Task[]> {
   try {
+    console.log('Fetching tasks from:', API_ENDPOINTS.tasks.getAll);
     const response = await apiCall<{ tasks: BackendTask; count: number }>(API_ENDPOINTS.tasks.getAll);
-    return backendToFrontend(response.tasks || {});
+    console.log('Raw API response:', response);
+    const convertedTasks = backendToFrontend(response.tasks || {});
+    console.log('Converted tasks:', convertedTasks);
+    return convertedTasks;
   } catch (error) {
     console.error('Failed to fetch tasks:', error);
     throw error;
